@@ -14,13 +14,14 @@ Abre la URL que muestre Vite, normalmente `http://localhost:5173`.
 
 ## Funciones actuales
 
-- Panel tecnico para crear ordenes de reparacion.
+- Panel de administrador para crear ordenes de reparacion.
 - Busqueda por codigo, cliente o equipo.
 - Actualizacion del estado de cada orden.
 - Consulta publica del estado mediante el codigo de la orden.
 - Persistencia local en el navegador con `localStorage`.
 - Validación básica del alta de órdenes.
 - Generación de códigos consecutivos para nuevas órdenes.
+- El rol técnico está desactivado temporalmente; se habilitará en una versión posterior.
 
 ## Estructura inicial
 
