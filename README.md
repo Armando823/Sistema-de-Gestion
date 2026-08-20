@@ -1,1 +1,34 @@
-# Sistema-de-Gestion
+# Sistema de Gestion 0.1
+
+MVP de un sistema para talleres de reparacion de laptops y otros equipos.
+
+## Ejecutar
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Abre la URL que muestre Vite, normalmente `http://localhost:5173`.
+
+## Funciones actuales
+
+- Panel tecnico para crear ordenes de reparacion.
+- Busqueda por codigo, cliente o equipo.
+- Actualizacion del estado de cada orden.
+- Consulta publica del estado mediante el codigo de la orden.
+- Persistencia local en el navegador con `localStorage`.
+- Validación básica del alta de órdenes.
+- Generación de códigos consecutivos para nuevas órdenes.
+
+## Estructura inicial
+
+- `src/App.jsx`: flujo principal y navegación del MVP.
+- `src/data/repairData.js`: estados y datos iniciales; aquí se podrán añadir catálogos.
+- `src/services/repairStorage.js`: persistencia actual; se puede reemplazar por una API sin cambiar la pantalla.
+- `src/index.css`: estilos de la primera versión.
+
+## Proximo paso
+
+Esta versión no tiene usuarios, backend ni base de datos. Para producción se debe conectar una API, agregar autenticación y mover las órdenes a una base de datos. La separación de datos y persistencia deja preparado ese cambio.
