@@ -19,3 +19,7 @@ label { display: block; color: #526663; font-size: .82rem; font-weight: 600; mar
 .signature-footer button { border: 0; background: none; color: #16806d; font-weight: 700; padding: 0; }
 .consent { display: flex; gap: 8px; align-items: flex-start; line-height: 1.4; font-weight: 400; }
 .consent input { width: auto; margin: 2px 0 0; }
+.photo-update { display: block; color: #16806d; font-size: .75rem; margin: 8px 0 0; }
+.photo-update input { padding: 0; border: 0; background: transparent; font-size: .72rem; }
+.client-photos { margin-top: 14px; }
+.client-photos .photo-preview { margin-top: 8px; }

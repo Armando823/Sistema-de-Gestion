@@ -19,12 +19,8 @@ export default function SignaturePad({ value, onChange }) {
   }, [value]);
 
   function point(event) {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: (event.clientX - rect.left) * (canvas.width / rect.width),
-      y: (event.clientY - rect.top) * (canvas.height / rect.height),
-    };
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: (event.clientX - rect.left) * (560 / rect.width), y: (event.clientY - rect.top) * (150 / rect.height) };
   }
 
   function start(event) {
@@ -41,8 +37,8 @@ export default function SignaturePad({ value, onChange }) {
 
   function draw(event) {
     if (!drawingRef.current) return;
-    const context = canvasRef.current.getContext('2d');
     const position = point(event);
+    const context = canvasRef.current.getContext('2d');
     context.lineTo(position.x, position.y);
     context.stroke();
     setHasSignature(true);
@@ -61,10 +57,5 @@ export default function SignaturePad({ value, onChange }) {
     onChange('');
   }
 
-  return (
-    <div className="signature-box">
-      <canvas ref={canvasRef} width="560" height="150" onPointerDown={start} onPointerMove={draw} onPointerUp={finish} onPointerCancel={finish} aria-label="Firma del cliente" />
-      <div className="signature-footer"><span>{hasSignature ? 'Firma capturada' : 'Firma del cliente'}</span><button type="button" onClick={clear}>Limpiar</button></div>
-    </div>
-  );
+  return <div className="signature-box"><canvas ref={canvasRef} width="560" height="150" onPointerDown={start} onPointerMove={draw} onPointerUp={finish} onPointerCancel={finish} aria-label="Firma del cliente" /><div className="signature-footer"><span>{hasSignature ? 'Firma capturada' : 'Firma del cliente'}</span><button type="button" onClick={clear}>Limpiar</button></div></div>;
 }

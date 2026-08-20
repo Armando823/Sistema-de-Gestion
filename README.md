@@ -18,6 +18,7 @@ Abre la URL que muestre Vite, normalmente `http://localhost:5173`.
 - Busqueda por codigo, cliente o equipo.
 - Actualizacion del estado de cada orden.
 - Consulta publica del estado mediante el codigo de la orden.
+- El cliente no crea ordenes; solo consulta una orden registrada por el administrador.
 - Persistencia local en el navegador con `localStorage`.
 - Validación básica del alta de órdenes.
 - Generación de códigos consecutivos para nuevas órdenes.
