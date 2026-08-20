@@ -22,6 +22,8 @@ Abre la URL que muestre Vite, normalmente `http://localhost:5173`.
 - Validación básica del alta de órdenes.
 - Generación de códigos consecutivos para nuevas órdenes.
 - El rol técnico está desactivado temporalmente; se habilitará en una versión posterior.
+- Registro de hasta 3 fotos comprimidas del equipo al recibirlo.
+- Firma dibujada y aceptación de una constancia de revisión.
 
 ## Estructura inicial
 
@@ -32,4 +34,4 @@ Abre la URL que muestre Vite, normalmente `http://localhost:5173`.
 
 ## Proximo paso
 
-Esta versión no tiene usuarios, backend ni base de datos. Para producción se debe conectar una API, agregar autenticación y mover las órdenes a una base de datos. La separación de datos y persistencia deja preparado ese cambio.
+Esta versión no tiene usuarios, backend ni base de datos. Las fotos y firmas se guardan temporalmente en `localStorage`, por lo que no es una solución de respaldo ni una garantía legal. Para producción se debe conectar una API, agregar autenticación, almacenamiento privado de archivos y generar una constancia con fecha y condiciones revisadas legalmente.
