@@ -1,21 +1,18 @@
-# Security Policy
+# Política de seguridad
 
-## Supported Versions
+## Versiones compatibles
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+| Versión | Estado |
+| ------- | ------ |
+| 0.1.x | En desarrollo |
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+## Reportar una vulnerabilidad
 
-## Reporting a Vulnerability
+Este proyecto está en desarrollo y usa `localStorage` solo para el prototipo.
+No debe usarse para guardar información sensible ni como mecanismo de
+autenticación.
 
-Use this section to tell people how to report a vulnerability.
-
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Para reportar una vulnerabilidad, abre un issue privado en el repositorio o
+contacta al mantenedor antes de publicar detalles técnicos. Incluye pasos para
+reproducirla, impacto y una posible solución si la conoces. No incluyas
+contraseñas, tokens ni datos personales reales.
