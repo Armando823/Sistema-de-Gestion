@@ -90,6 +90,23 @@ nav {
   color: #fff;
 }
 
+.text-button {
+  border: 0;
+  background: transparent;
+  color: #16806d;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 4px 0;
+}
+
+.form-heading-actions,
+.search-controls,
+.order-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 /* Contenido principal */
 .content,
 .client-view {
@@ -270,6 +287,42 @@ select:focus {
   font-weight: 400;
   margin-top: 7px;
 }
+
+.status-badge {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.status-recibido {
+  background: #e6eefb;
+  color: #315b96;
+}
+.status-en-diagnóstico {
+  background: #fff1c9;
+  color: #8a6500;
+}
+.status-esperando-repuesto {
+  background: #fce5d8;
+  color: #a14d25;
+}
+.status-en-reparación {
+  background: #dcefeb;
+  color: #176c5c;
+}
+.status-listo-para-entregar {
+  background: #dff2dc;
+  color: #2f7431;
+}
+.status-entregado {
+  background: #e7e7e7;
+  color: #555;
+}
+.danger-text {
+  color: #b34d43;
+}
 .empty {
   color: #71827f;
 }
@@ -433,6 +486,81 @@ select:focus {
   margin-top: 8px;
 }
 
+/* Modales */
+.modal-backdrop {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 42, 58, 0.45);
+}
+.modal {
+  width: min(440px, 100%);
+  padding: 26px;
+  background: #fff;
+  border: 1px solid #dce5e2;
+  box-shadow: 0 18px 50px rgba(25, 59, 55, 0.18);
+}
+.modal p {
+  color: #637774;
+  line-height: 1.5;
+}
+.modal-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.icon-button {
+  border: 0;
+  background: transparent;
+  color: #637774;
+  font-weight: 700;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+.secondary-button,
+.danger-button {
+  border: 0;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+.secondary-button {
+  background: #e8efed;
+  color: #173f3a;
+}
+.danger-button {
+  background: #b34d43;
+  color: #fff;
+}
+.receipt-details {
+  display: grid;
+  gap: 12px;
+  margin: 22px 0;
+}
+.receipt-details div {
+  display: grid;
+  gap: 3px;
+}
+.receipt-details dt {
+  color: #82928f;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.receipt-details dd {
+  margin: 0;
+  color: #172a3a;
+}
+.receipt-note {
+  font-size: 0.84rem;
+}
+
 /* Adaptacion para tablets y celulares */
 @media (max-width: 900px) {
   .topbar,
@@ -461,6 +589,12 @@ select:focus {
   }
   .search {
     max-width: none;
+  }
+  .search-controls {
+    width: 100%;
+  }
+  .search-controls .search {
+    flex: 1;
   }
   .panel-heading {
     flex-wrap: wrap;
@@ -500,6 +634,9 @@ select:focus {
   }
   .client-card {
     padding: 24px 18px;
+  }
+  .order-actions {
+    flex-wrap: wrap;
   }
   .nav-button {
     font-size: 0.82rem;

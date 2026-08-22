@@ -23,7 +23,9 @@ export function saveRepairs(repairs) {
       STORAGE_KEY,
       JSON.stringify(repairs.filter(isValidRepair).slice(0, 500)),
     );
+    return true;
   } catch {
     // El almacenamiento local puede estar bloqueado o lleno; la app sigue funcionando en memoria.
+    return false;
   }
 }

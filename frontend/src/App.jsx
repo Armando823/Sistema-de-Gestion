@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import SignaturePad from "./components/signature/SignaturePad";
+import ConfirmModal from "./components/modals/ConfirmModal";
+import ReceiptModal from "./components/modals/ReceiptModal";
 import { repairStatuses } from "./data/repairData";
 import { loadRepairs, saveRepairs } from "./services/repairStorage";
 import { readImage } from "./utils/image";
@@ -15,6 +17,23 @@ const emptyForm = {
   consent: false,
 };
 
+function statusClass(status) {
+  return `status-${status.toLowerCase().replaceAll(" ", "-")}`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function receiptHtml(repair) {
+  return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd></dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${repair.signature ? `<img class="signature" src="${repair.signature}" alt="Firma del cliente">` : ""}</body></html>`;
+}
+
 function App() {
   const [repairs, setRepairs] = useState(loadRepairs);
   const [view, setView] = useState("admin");
@@ -22,7 +41,14 @@ function App() {
   const [notice, setNotice] = useState("");
   const [formError, setFormError] = useState("");
   const [form, setForm] = useState(emptyForm);
-  useEffect(() => saveRepairs(repairs), [repairs]);
+  const [confirmation, setConfirmation] = useState(null);
+  const [receipt, setReceipt] = useState(null);
+  useEffect(() => {
+    if (!saveRepairs(repairs))
+      setNotice(
+        "No se pudieron guardar los cambios: el almacenamiento está lleno o bloqueado.",
+      );
+  }, [repairs]);
   const filteredRepairs = repairs.filter((repair) =>
     [repair.id, repair.customer, repair.device].some((value) =>
       value.toLowerCase().includes(search.toLowerCase()),
@@ -50,14 +76,59 @@ function App() {
     setNotice(`${id} creada correctamente`);
   }
 
-  function updateStatus(id, status) {
+  function requestStatusChange(id, status) {
     if (!repairStatuses.includes(status)) return;
-    setRepairs(
-      repairs.map((repair) =>
-        repair.id === id ? { ...repair, status, updated: "Ahora" } : repair,
-      ),
-    );
-    setNotice(`${id} actualizada`);
+    const repair = repairs.find((item) => item.id === id);
+    if (!repair || repair.status === status) return;
+    setConfirmation({ type: "status", id, status });
+  }
+
+  function requestDelete(id) {
+    setConfirmation({ type: "delete", id });
+  }
+
+  function confirmAction() {
+    if (confirmation?.type === "status") {
+      setRepairs((current) =>
+        current.map((repair) =>
+          repair.id === confirmation.id
+            ? { ...repair, status: confirmation.status, updated: "Ahora" }
+            : repair,
+        ),
+      );
+      setNotice(`${confirmation.id} actualizada`);
+    }
+    if (confirmation?.type === "delete") {
+      setRepairs((current) =>
+        current.filter((repair) => repair.id !== confirmation.id),
+      );
+      setNotice(`${confirmation.id} eliminada`);
+    }
+    setConfirmation(null);
+  }
+
+  function downloadReceipt(repair) {
+    const blob = new Blob([receiptHtml(repair)], {
+      type: "text/html;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${repair.id}-constancia.html`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printReceipt(repair) {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setNotice("El navegador bloqueó la ventana de impresión.");
+      return;
+    }
+    printWindow.document.write(receiptHtml(repair));
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   }
 
   async function updatePhotos(id, event) {
@@ -127,12 +198,37 @@ function App() {
           setSearch={setSearch}
           repairs={repairs}
           filteredRepairs={filteredRepairs}
-          updateStatus={updateStatus}
+          updateStatus={requestStatusChange}
           updatePhotos={updatePhotos}
+          requestDelete={requestDelete}
+          openReceipt={setReceipt}
         />
       ) : (
         <ClientView repairs={repairs} />
       )}
+      {confirmation && (
+        <ConfirmModal
+          title={
+            confirmation.type === "delete" ? "Eliminar orden" : "Cambiar estado"
+          }
+          message={
+            confirmation.type === "delete"
+              ? `¿Seguro que deseas eliminar ${confirmation.id}?`
+              : `¿Cambiar ${confirmation.id} a ${confirmation.status}?`
+          }
+          confirmLabel={
+            confirmation.type === "delete" ? "Eliminar" : "Cambiar estado"
+          }
+          onConfirm={confirmAction}
+          onCancel={() => setConfirmation(null)}
+        />
+      )}
+      <ReceiptModal
+        repair={receipt}
+        onClose={() => setReceipt(null)}
+        onPrint={printReceipt}
+        onDownload={downloadReceipt}
+      />
     </div>
   );
 }
@@ -149,6 +245,8 @@ function AdminView({
   filteredRepairs,
   updateStatus,
   updatePhotos,
+  requestDelete,
+  openReceipt,
 }) {
   return (
     <main className="content">
@@ -180,6 +278,8 @@ function AdminView({
           filteredRepairs={filteredRepairs}
           updateStatus={updateStatus}
           updatePhotos={updatePhotos}
+          requestDelete={requestDelete}
+          openReceipt={openReceipt}
         />
       </section>
     </main>
@@ -191,7 +291,16 @@ function RepairForm({ form, setForm, formError, addRepair, addPhotos }) {
     <form className="panel form-panel" onSubmit={addRepair}>
       <div className="panel-heading">
         <h3>Nueva reparación</h3>
-        <span>1</span>
+        <div className="form-heading-actions">
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => setForm(emptyForm)}
+          >
+            Limpiar
+          </button>
+          <span>1</span>
+        </div>
       </div>
       <label>
         Cliente
@@ -280,7 +389,9 @@ function RepairForm({ form, setForm, formError, addRepair, addPhotos }) {
           {formError}
         </p>
       )}
-      <button className="primary-button">Crear orden</button>
+      <button type="submit" className="primary-button">
+        Crear orden
+      </button>
     </form>
   );
 }
@@ -291,6 +402,8 @@ function OrderList({
   filteredRepairs,
   updateStatus,
   updatePhotos,
+  requestDelete,
+  openReceipt,
 }) {
   return (
     <section className="panel orders-panel">
@@ -299,14 +412,25 @@ function OrderList({
           <h3>Órdenes recientes</h3>
           <p>{filteredRepairs.length} resultados</p>
         </div>
-        <input
-          maxLength="80"
-          className="search"
-          aria-label="Buscar órdenes"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Buscar orden o cliente"
-        />
+        <div className="search-controls">
+          <input
+            maxLength="80"
+            className="search"
+            aria-label="Buscar órdenes"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar orden o cliente"
+          />
+          {search && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setSearch("")}
+            >
+              Limpiar
+            </button>
+          )}
+        </div>
       </div>
       <div className="order-list">
         {filteredRepairs.map((repair) => (
@@ -324,6 +448,9 @@ function OrderList({
                 {repair.photos?.length || 0} foto(s) ·{" "}
                 {repair.signature ? "Firmada" : "Sin firma"}
               </small>
+              <span className={`status-badge ${statusClass(repair.status)}`}>
+                {repair.status}
+              </span>
               <label className="photo-update">
                 Actualizar fotos
                 <input
@@ -343,6 +470,22 @@ function OrderList({
                 <option key={status}>{status}</option>
               ))}
             </select>
+            <div className="order-actions">
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => openReceipt(repair)}
+              >
+                Constancia
+              </button>
+              <button
+                type="button"
+                className="text-button danger-text"
+                onClick={() => requestDelete(repair.id)}
+              >
+                Eliminar
+              </button>
+            </div>
           </article>
         ))}
         {filteredRepairs.length === 0 && (
