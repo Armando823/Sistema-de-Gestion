@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import SignaturePad from "./components/signature/SignaturePad";
 import ConfirmModal from "./components/modals/ConfirmModal";
 import ReceiptModal from "./components/modals/ReceiptModal";
 import { repairStatuses } from "./data/repairData";
 import { loadRepairs, saveRepairs } from "./services/repairStorage";
 import { readImage } from "./utils/image";
-import { repairLimits, validateRepairForm } from "./utils/repairValidation";
+import {
+  isValidRepair,
+  repairLimits,
+  validateRepairForm,
+} from "./utils/repairValidation";
 
 const emptyForm = {
   customer: "",
@@ -19,6 +23,13 @@ const emptyForm = {
 
 function statusClass(status) {
   return `status-${status.toLowerCase().replaceAll(" ", "-")}`;
+}
+
+function formatTimestamp(timestamp = new Date()) {
+  return new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
 }
 
 function escapeHtml(value) {
@@ -43,6 +54,8 @@ function App() {
   const [form, setForm] = useState(emptyForm);
   const [confirmation, setConfirmation] = useState(null);
   const [receipt, setReceipt] = useState(null);
+  const importInputRef = useRef(null);
+      const onClientView = () => setView("client");
   useEffect(() => {
     if (!saveRepairs(repairs))
       setNotice(
@@ -67,8 +80,16 @@ function App() {
         1000,
       ) + 1;
     const id = `REP-${nextNumber}`;
+    const timestamp = new Date().toISOString();
     setRepairs([
-      { ...form, id, status: "Recibido", updated: "Ahora" },
+      {
+        ...form,
+        id,
+        status: "Recibido",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        updated: formatTimestamp(timestamp),
+      },
       ...repairs,
     ]);
     setForm(emptyForm);
@@ -92,7 +113,12 @@ function App() {
       setRepairs((current) =>
         current.map((repair) =>
           repair.id === confirmation.id
-            ? { ...repair, status: confirmation.status, updated: "Ahora" }
+            ? {
+                ...repair,
+                status: confirmation.status,
+                updatedAt: new Date().toISOString(),
+                updated: formatTimestamp(),
+              }
             : repair,
         ),
       );
@@ -131,10 +157,53 @@ function App() {
     printWindow.print();
   }
 
-  async function updatePhotos(id, event) {
-    const files = Array.from(event.target.files).slice(0, repairLimits.photos);
+  function exportRepairs() {
+    const blob = new Blob([JSON.stringify(repairs, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ordenes-reparacion-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setNotice("Copia de órdenes descargada");
+  }
+
+  async function importRepairs(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
     try {
-      const photos = await Promise.all(files.map((file) => readImage(file)));
+      const importedData = JSON.parse(await file.text());
+      const importedRepairs = Array.isArray(importedData)
+        ? importedData
+        : importedData?.repairs;
+      const validRepairs = Array.isArray(importedRepairs)
+        ? importedRepairs.filter(isValidRepair).slice(0, 500)
+        : [];
+      if (validRepairs.length === 0) {
+        setNotice("El archivo no contiene órdenes válidas");
+        return;
+      }
+      setRepairs(validRepairs);
+      setSearch("");
+      setNotice(`${validRepairs.length} orden(es) importada(s)`);
+    } catch {
+      setNotice("No se pudo leer el archivo de órdenes");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function updatePhotos(id, event) {
+    const selectedFiles = Array.from(event.target.files);
+    if (selectedFiles.length > repairLimits.photos) {
+      setNotice(`Puedes seleccionar máximo ${repairLimits.photos} fotos.`);
+      event.target.value = "";
+      return;
+    }
+    try {
+      const photos = await Promise.all(selectedFiles.map((file) => readImage(file)));
       setRepairs(
         repairs.map((repair) =>
           repair.id === id ? { ...repair, photos, updated: "Ahora" } : repair,
@@ -148,15 +217,27 @@ function App() {
   }
 
   async function addPhotos(event) {
-    const files = Array.from(event.target.files).slice(0, repairLimits.photos);
+    const selectedFiles = Array.from(event.target.files);
+    if (selectedFiles.length > repairLimits.photos) {
+      setFormError(`Puedes seleccionar máximo ${repairLimits.photos} fotos.`);
+      event.target.value = "";
+      return;
+    }
     try {
-      const photos = await Promise.all(files.map((file) => readImage(file)));
+      const photos = await Promise.all(selectedFiles.map((file) => readImage(file)));
       setForm((current) => ({ ...current, photos }));
       setFormError("");
     } catch (error) {
       setFormError(error.message);
     }
     event.target.value = "";
+  }
+
+  function removeFormPhoto(indexToRemove) {
+    setForm((current) => ({
+      ...current,
+      photos: current.photos.filter((_, index) => index !== indexToRemove),
+    }));
   }
 
   return (
@@ -166,20 +247,51 @@ function App() {
           <span className="eyebrow">TALLER DIGITAL</span>
           <h1>Control de reparaciones</h1>
         </div>
-        <nav>
-          <button
-            className={view === "admin" ? "nav-button active" : "nav-button"}
-            onClick={() => setView("admin")}
-          >
-            Administrador
-          </button>
-          <button
-            className={view === "client" ? "nav-button active" : "nav-button"}
-            onClick={() => setView("client")}
-          >
-            Consulta cliente
-          </button>
-        </nav>
+        {view === "admin" && (
+          <label className="header-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              aria-label="Buscar orden o cliente"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar orden o cliente"
+            />
+          </label>
+        )}
+        {view === "client" && (
+          <nav>
+            <button
+              className="nav-button"
+              onClick={() => setView("admin")}
+            >
+              Administrador
+            </button>
+            <button className="nav-button active">Consulta cliente</button>
+          </nav>
+        )}
+        {view === "admin" && (
+          <div className="topbar-tools">
+            <span className="system-status"><i /> Sistema activo</span>
+            <button
+              type="button"
+              className="text-button"
+              onClick={exportRepairs}
+            >
+              Exportar datos
+            </button>
+            <label className="text-button import-label">
+              Importar datos
+              <input
+                ref={importInputRef}
+                className="file-input"
+                type="file"
+                accept="application/json,.json"
+                onChange={importRepairs}
+              />
+            </label>
+            <span className="admin-profile"><b>AD</b> Admin</span>
+          </div>
+        )}
       </header>
       {notice && (
         <div className="notice" role="status">
@@ -194,10 +306,12 @@ function App() {
           formError={formError}
           addRepair={addRepair}
           addPhotos={addPhotos}
+          removePhoto={removeFormPhoto}
           search={search}
           setSearch={setSearch}
           repairs={repairs}
           filteredRepairs={filteredRepairs}
+          onClientView={onClientView}
           updateStatus={requestStatusChange}
           updatePhotos={updatePhotos}
           requestDelete={requestDelete}
@@ -243,54 +357,178 @@ function AdminView({
   setSearch,
   repairs,
   filteredRepairs,
+  onClientView,
   updateStatus,
   updatePhotos,
   requestDelete,
   openReceipt,
+  removePhoto,
 }) {
+  const statusTotals = repairStatuses.map((status) => ({
+    status,
+    total: repairs.filter((repair) => repair.status === status).length,
+  }));
+  const maxStatusTotal = Math.max(...statusTotals.map((item) => item.total), 1);
+
   return (
-    <main className="content">
-      <section className="intro">
-        <div>
-          <p className="eyebrow">ÁREA DEL ADMINISTRADOR</p>
-          <h2>Las reparaciones, claras de un vistazo.</h2>
-          <p>
-            Solo el administrador registra órdenes, evidencia el estado del
-            equipo y conserva la autorización del cliente.
-          </p>
+    <div className="admin-layout">
+      <aside className="admin-sidebar" aria-label="Navegación administrativa">
+        <div className="sidebar-mark">MC</div>
+        <div className="sidebar-illustration" aria-hidden="true">⌁</div>
+        <div className="sidebar-title">
+          <strong>Taller Móvil</strong>
+          <span>Sistema integral</span>
         </div>
-        <div className="summary">
-          <strong>{repairs.length}</strong>
-          <span>órdenes activas</span>
+        <nav className="sidebar-nav">
+          <span className="sidebar-section">Principal</span>
+          <button type="button" className="sidebar-link active">
+            <span className="sidebar-icon">▦</span>
+            Dashboard
+          </button>
+          <button type="button" className="sidebar-link">
+            <span className="sidebar-icon">≡</span>
+            Órdenes
+          </button>
+          <span className="sidebar-section">Gestión</span>
+          <button
+            type="button"
+            className="sidebar-link muted"
+            disabled
+            title="Disponible en la versión 0.3"
+          >
+            <span className="sidebar-icon">⚙</span>
+            Inventario inteligente
+            <small>0.3</small>
+          </button>
+          <button
+            type="button"
+            className="sidebar-link muted"
+            disabled
+            title="Disponible en la versión 0.4"
+          >
+            <span className="sidebar-icon">♙</span>
+            Clientes y garantías
+            <small>0.4</small>
+          </button>
+          <button
+            type="button"
+            className="sidebar-link muted"
+            disabled
+            title="Disponible en la versión 0.3"
+          >
+            <span className="sidebar-icon">⌁</span>
+            Reportes avanzados
+            <small>0.3</small>
+          </button>
+          <button
+            type="button"
+            className="sidebar-link muted"
+            disabled
+            title="Disponible en la versión 1.0"
+          >
+            <span className="sidebar-icon">⚙</span>
+            Ajustes
+            <small>1.0</small>
+          </button>
+        </nav>
+        <div className="sidebar-footer">
+          <button
+            type="button"
+            className="sidebar-client-link"
+            onClick={onClientView}
+          >
+            Consulta cliente
+          </button>
+          <span>Versión 0.1</span>
         </div>
-      </section>
-      <section className="workspace">
-        <RepairForm
-          form={form}
-          setForm={setForm}
-          formError={formError}
-          addRepair={addRepair}
-          addPhotos={addPhotos}
-        />
-        <OrderList
-          search={search}
-          setSearch={setSearch}
-          filteredRepairs={filteredRepairs}
-          updateStatus={updateStatus}
-          updatePhotos={updatePhotos}
-          requestDelete={requestDelete}
-          openReceipt={openReceipt}
-        />
-      </section>
-    </main>
+      </aside>
+      <main className="admin-main">
+        <section className="dashboard-heading">
+          <div>
+            <p className="eyebrow">OPERACIONES HOY</p>
+            <h2>Operaciones hoy</h2>
+            <p>Registra órdenes y consulta el estado de cada reparación.</p>
+          </div>
+          <div className="summary">
+            <strong>{repairs.length}</strong>
+            <span>órdenes totales</span>
+          </div>
+        </section>
+        <section className="dashboard-stats" aria-label="Resumen de órdenes">
+          <Metric
+            label="Órdenes totales"
+            value={repairs.length}
+            tone="green"
+            icon="▣"
+          />
+          <Metric
+            label="En diagnóstico"
+            value={statusTotals.find((item) => item.status === "En diagnóstico")?.total || 0}
+            tone="blue"
+            icon="⌁"
+          />
+          <Metric
+            label="En reparación"
+            value={statusTotals.find((item) => item.status === "En reparación")?.total || 0}
+            tone="orange"
+            icon="⚙"
+          />
+          <Metric
+            label="Entregadas"
+            value={statusTotals.find((item) => item.status === "Entregado")?.total || 0}
+            tone="purple"
+            icon="↥"
+          />
+        </section>
+        <section className="workspace">
+          <RepairForm
+            form={form}
+            setForm={setForm}
+            formError={formError}
+            addRepair={addRepair}
+            addPhotos={addPhotos}
+            removePhoto={removePhoto}
+          />
+          <OrderList
+            search={search}
+            setSearch={setSearch}
+            filteredRepairs={filteredRepairs}
+            updateStatus={updateStatus}
+            updatePhotos={updatePhotos}
+            requestDelete={requestDelete}
+            openReceipt={openReceipt}
+          />
+        </section>
+      </main>
+    </div>
   );
 }
 
-function RepairForm({ form, setForm, formError, addRepair, addPhotos }) {
+function Metric({ label, value, tone, icon }) {
+  return (
+    <div className={`metric-card ${tone}`}>
+      <div className="metric-label">
+        <span>{label}</span>
+        <span className="metric-icon" aria-hidden="true">{icon}</span>
+      </div>
+      <strong>{value}</strong>
+      <small>Actualizado ahora</small>
+    </div>
+  );
+}
+
+function RepairForm({
+  form,
+  setForm,
+  formError,
+  addRepair,
+  addPhotos,
+  removePhoto,
+}) {
   return (
     <form className="panel form-panel" onSubmit={addRepair}>
       <div className="panel-heading">
-        <h3>Nueva reparación</h3>
+        <h3>Nuevo ingreso <small>(orden de servicio)</small></h3>
         <div className="form-heading-actions">
           <button
             type="button"
@@ -347,26 +585,6 @@ function RepairForm({ form, setForm, formError, addRepair, addPhotos }) {
         />
       </label>
       <label>
-        Fotos del equipo
-        <input
-          required
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={addPhotos}
-        />
-        <small className="field-help">
-          Hasta 3 fotos del estado físico al recibirlo.
-        </small>
-      </label>
-      {form.photos.length > 0 && (
-        <div className="photo-preview">
-          {form.photos.map((photo, index) => (
-            <img key={photo} src={photo} alt={`Evidencia ${index + 1}`} />
-          ))}
-        </div>
-      )}
-      <label>
         Firma del cliente
         <SignaturePad
           value={form.signature}
@@ -409,7 +627,7 @@ function OrderList({
     <section className="panel orders-panel">
       <div className="panel-heading">
         <div>
-          <h3>Órdenes recientes</h3>
+          <h3>Últimas órdenes</h3>
           <p>{filteredRepairs.length} resultados</p>
         </div>
         <div className="search-controls">
