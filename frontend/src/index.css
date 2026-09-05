@@ -1099,6 +1099,7 @@ select:focus {
   }
   .topbar-tools {
     width: 100%;
+    flex-wrap: wrap;
     justify-content: space-between;
   }
   .data-actions {
@@ -1127,11 +1128,15 @@ select:focus {
   .sidebar-nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .sidebar-link {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
   .sidebar-section {
     grid-column: 1 / -1;
   }
   .sidebar-footer {
-    display: none;
+    display: grid;
   }
   .admin-main {
     padding: 32px 0 48px;
@@ -1182,10 +1187,12 @@ select:focus {
 
 @media (max-width: 420px) {
   .topbar {
-    padding: 22px 16px;
+    padding: 12px 16px;
+    gap: 12px;
   }
   h1 {
-    font-size: 1.15rem;
+    font-size: 1rem;
+    white-space: normal;
   }
   h2 {
     font-size: 2rem;
@@ -1198,6 +1205,29 @@ select:focus {
   }
   .panel {
     padding: 18px;
+  }
+  .admin-layout {
+    width: calc(100% - 24px);
+  }
+  .admin-sidebar {
+    padding: 18px 10px;
+  }
+  .sidebar-nav {
+    grid-template-columns: 1fr;
+  }
+  .sidebar-section {
+    grid-column: auto;
+  }
+  .sidebar-link {
+    padding: 10px 8px;
+  }
+  .header-search {
+    flex-basis: 100%;
+    width: 100%;
+  }
+  .topbar-tools {
+    gap: 8px;
+    font-size: 0.7rem;
   }
   .client-card {
     padding: 24px 18px;
@@ -1221,5 +1251,23 @@ select:focus {
   .status-bar-row {
     grid-template-columns: 108px minmax(0, 1fr) 24px;
     gap: 8px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1180px) {
+  .dashboard-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+  }
+
+  .topbar-tools {
+    gap: 8px;
+  }
+
+  .topbar-tools .import-label {
+    display: none;
   }
 }
