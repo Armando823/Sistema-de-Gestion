@@ -1,4 +1,15 @@
+import { useEffect } from "react";
+
 export default function ReceiptModal({ repair, onClose, onPrint, onDownload }) {
+  useEffect(() => {
+    if (!repair) return undefined;
+    function handleKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, repair]);
+
   if (!repair) return null;
 
   return (
@@ -8,6 +19,7 @@ export default function ReceiptModal({ repair, onClose, onPrint, onDownload }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="receipt-title"
+        aria-describedby="receipt-note"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="modal-heading">
@@ -46,7 +58,7 @@ export default function ReceiptModal({ repair, onClose, onPrint, onDownload }) {
             <dd>{repair.status}</dd>
           </div>
         </dl>
-        <p className="receipt-note">
+        <p id="receipt-note" className="receipt-note">
           El cliente autoriza la revision del equipo y recibe esta constancia
           del estado reportado.
         </p>

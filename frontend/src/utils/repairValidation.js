@@ -7,6 +7,8 @@ export const repairLimits = {
   problem: 500,
   photos: 3,
   photoSize: 5 * 1024 * 1024,
+  imageDataSize: 2_500_000,
+  importFileSize: 12 * 1024 * 1024,
 };
 
 function isText(value, maxLength) {
@@ -21,6 +23,22 @@ function isValidPhone(value) {
   return /^[+\d][\d\s().-]{6,29}$/.test(value.trim());
 }
 
+function isValidEmail(value) {
+  return (
+    typeof value === "string" &&
+    value.length <= 254 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+  );
+}
+
+export function isValidImageData(value) {
+  return (
+    typeof value === "string" &&
+    value.length <= repairLimits.imageDataSize &&
+    /^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(value)
+  );
+}
+
 export function isValidRepair(repair) {
   return Boolean(
     repair &&
@@ -30,7 +48,17 @@ export function isValidRepair(repair) {
     isText(repair.device, repairLimits.device) &&
     isText(repair.problem, repairLimits.problem) &&
     repairStatuses.includes(repair.status) &&
-    isText(repair.updated, 40),
+    isText(repair.updated, 40) &&
+    (repair.ownerEmail === undefined || isValidEmail(repair.ownerEmail)) &&
+    (repair.authorizedBy === undefined ||
+      isText(repair.authorizedBy, repairLimits.customer)) &&
+    (repair.signature === undefined ||
+      repair.signature === "" ||
+      isValidImageData(repair.signature)) &&
+    (repair.photos === undefined ||
+      (Array.isArray(repair.photos) &&
+        repair.photos.length <= repairLimits.photos &&
+        repair.photos.every(isValidImageData))),
   );
 }
 
@@ -47,6 +75,8 @@ export function validateRepairForm(form) {
     return "El campo de fotos debe ser una lista válida.";
   if (form.photos.length > repairLimits.photos)
     return `Puedes agregar máximo ${repairLimits.photos} fotos del equipo.`;
+  if (!form.photos.every(isValidImageData))
+    return "Las fotos seleccionadas no tienen un formato válido.";
   if (!isText(form.authorizedBy, repairLimits.customer))
     return "El nombre de quien entrega la laptop es obligatorio.";
   if (form.consent !== true)

@@ -1,6 +1,8 @@
+import { repairLimits } from "./repairValidation";
+
 export function readImage(file, maxSize = 900) {
   return new Promise((resolve, reject) => {
-    if (file.size > 5 * 1024 * 1024) {
+    if (file.size > repairLimits.photoSize) {
       reject(new Error("Cada imagen debe pesar máximo 5 MB."));
       return;
     }

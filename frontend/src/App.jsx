@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import SignaturePad from "./components/signature/SignaturePad";
+import SignaturePad from "./components/signature/Signaturepad";
 import ConfirmModal from "./components/modals/ConfirmModal";
 import ReceiptModal from "./components/modals/ReceiptModal";
 import { repairStatuses } from "./data/repairData";
 import { loadRepairs, saveRepairs } from "./services/repairStorage";
+import {
+  authenticateClient,
+  clearClientSession,
+  readClientSession,
+  registerClient,
+  saveClientSession,
+} from "./services/accountStorage";
 import { readImage } from "./utils/image";
 import {
   isValidRepair,
+  isValidImageData,
   repairLimits,
   validateRepairForm,
 } from "./utils/repairValidation";
@@ -22,9 +30,9 @@ const emptyForm = {
   consent: false,
 };
 
-const demoUsers = {
-  admin: { username: "jefe", password: "jefe123", label: "Administrador" },
-};
+const demoUsers = import.meta.env.DEV
+  ? { admin: { username: "jefe", password: "jefe123", label: "Administrador" } }
+  : null;
 
 const supportEmail = "soporte@tallerdigital.com";
 
@@ -100,22 +108,25 @@ function escapeHtml(value) {
 }
 
 function receiptHtml(repair) {
-  const signatureMarkup = repair.signature?.startsWith("data:image/")
-    ? `<img class="signature" src="${repair.signature}" alt="Firma del cliente">`
+  const signatureMarkup = isValidImageData(repair.signature)
+    ? `<img class="signature" src="${escapeHtml(repair.signature)}" alt="Firma del cliente">`
     : "";
   return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd>${repair.authorizedBy ? `<dt>Recibido por</dt><dd>${escapeHtml(repair.authorizedBy)}</dd>` : ""}</dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${signatureMarkup}</body></html>`;
 }
 
-function LoginView({ onLogin }) {
+function LoginView({ onLogin, onClientLogin, onClientRegister }) {
   const [adminLogin, setAdminLogin] = useState(false);
+  const [clientAccess, setClientAccess] = useState("welcome");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [error, setError] = useState("");
 
   function submit(event) {
     event.preventDefault();
-    const user = demoUsers.admin;
-    if (username.trim().toLowerCase() !== user.username || password !== user.password) {
+    const user = demoUsers?.admin;
+    if (!user || username.trim().toLowerCase() !== user.username || password !== user.password) {
       setError("El usuario o la contraseña no son correctos.");
       return;
     }
@@ -128,6 +139,42 @@ function LoginView({ onLogin }) {
     setUsername("");
     setPassword("");
     setError("");
+  }
+
+  function openClientAccess(access) {
+    setAdminLogin(false);
+    setClientAccess(access);
+    setEmail("");
+    setPassword("");
+    setPasswordConfirmation("");
+    setError("");
+  }
+
+  async function submitClient(event) {
+    event.preventDefault();
+    const result = await onClientLogin(email, password);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setError("");
+  }
+
+  async function submitRegistration(event) {
+    event.preventDefault();
+    if (password !== passwordConfirmation) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
+    const result = await onClientRegister(email, password);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setPassword("");
+    setPasswordConfirmation("");
+    setError("Cuenta creada. Ahora puedes iniciar sesión.");
+    setClientAccess("login");
   }
 
   return (
@@ -146,20 +193,10 @@ function LoginView({ onLogin }) {
           <p>
             {adminLogin
               ? "Este acceso está reservado para la administración del taller."
-              : "Consulta el estado de tu equipo sin crear una cuenta."}
+              : "Crea una cuenta para consultar y gestionar tus reparaciones."}
           </p>
         </div>
-        {!adminLogin ? (
-          <div className="public-access">
-            <button type="button" className="primary-button" onClick={() => onLogin("client")}>
-              Entrar como cliente
-            </button>
-            <p>Acceso disponible para todos los usuarios de la aplicación.</p>
-            <button type="button" className="private-access" onClick={openAdminLogin}>
-              Acceso privado del jefe
-            </button>
-          </div>
-        ) : (
+        {adminLogin ? (
           <form className="login-form" onSubmit={submit}>
             <label>
               Usuario del jefe
@@ -188,16 +225,84 @@ function LoginView({ onLogin }) {
               Volver al acceso de cliente
             </button>
           </form>
+        ) : clientAccess === "welcome" ? (
+          <div className="public-access">
+            <button type="button" className="primary-button" onClick={() => openClientAccess("login")}>
+              Iniciar sesión como cliente
+            </button>
+            <button type="button" className="secondary-button" onClick={() => openClientAccess("register")}>
+              Crear cuenta de cliente
+            </button>
+            <p>Necesitas una cuenta para crear y consultar tus reparaciones.</p>
+            {demoUsers && (
+              <button type="button" className="private-access" onClick={openAdminLogin}>
+                Acceso demo privado del jefe
+              </button>
+            )}
+          </div>
+        ) : (
+          <form className="login-form" onSubmit={clientAccess === "register" ? submitRegistration : submitClient}>
+            <label>
+              Correo electrónico
+              <input
+                required
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="cliente@correo.com"
+              />
+            </label>
+            <label>
+              Contraseña
+              <input
+                required
+                type="password"
+                minLength={8}
+                autoComplete={clientAccess === "register" ? "new-password" : "current-password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Mínimo 8 caracteres"
+              />
+            </label>
+            {clientAccess === "register" && (
+              <label>
+                Confirmar contraseña
+                <input
+                  required
+                  type="password"
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={passwordConfirmation}
+                  onChange={(event) => setPasswordConfirmation(event.target.value)}
+                  placeholder="Repite tu contraseña"
+                />
+              </label>
+            )}
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button type="submit" className="primary-button">
+              {clientAccess === "register" ? "Crear cuenta" : "Entrar como cliente"}
+            </button>
+            <button type="button" className="private-access" onClick={() => openClientAccess("welcome")}>
+              Volver
+            </button>
+          </form>
         )}
-        <p className="login-note">El acceso de cliente es público. El panel administrativo requiere las credenciales del jefe.</p>
+        <p className="login-note">
+          Los clientes usan una cuenta propia. El acceso demo administrativo
+          solo está disponible durante el desarrollo local.
+        </p>
       </section>
     </main>
   );
 }
 
-function App() {
+function App({ version = "0.2" }) {
   const [repairs, setRepairs] = useState(loadRepairs);
-  const [role, setRole] = useState(null);
+  const [clientEmail, setClientEmail] = useState(readClientSession);
+  const [role, setRole] = useState(() =>
+    readClientSession() ? "client" : null,
+  );
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [clientForm, setClientForm] = useState(emptyForm);
@@ -248,7 +353,7 @@ function App() {
     const validationError = validateRepairForm(clientForm);
     if (validationError) return setClientFormError(validationError);
     createRepair(
-      clientForm,
+      { ...clientForm, ownerEmail: clientEmail },
       () => setClientForm(emptyForm),
       () => setClientFormError(""),
       "enviada al taller",
@@ -300,11 +405,11 @@ function App() {
     link.href = url;
     link.download = `${repair.id}-constancia.html`;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function printReceipt(repair) {
-    const printWindow = window.open("", "_blank");
+    const printWindow = window.open("", "_blank", "noopener,noreferrer");
     if (!printWindow) {
       setNotice("El navegador bloqueó la ventana de impresión.");
       return;
@@ -324,13 +429,18 @@ function App() {
     link.href = url;
     link.download = `ordenes-reparacion-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     setNotice("Copia de órdenes descargada");
   }
 
   async function importRepairs(event) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (file.size > repairLimits.importFileSize) {
+      setNotice("El archivo de órdenes supera el tamaño máximo permitido.");
+      event.target.value = "";
+      return;
+    }
     try {
       const importedData = JSON.parse(await file.text());
       const importedRepairs = Array.isArray(importedData)
@@ -362,8 +472,8 @@ function App() {
     }
     try {
       const photos = await Promise.all(selectedFiles.map((file) => readImage(file)));
-      setRepairs(
-        repairs.map((repair) =>
+      setRepairs((current) =>
+        current.map((repair) =>
           repair.id === id ? { ...repair, photos, updated: "Ahora" } : repair,
         ),
       );
@@ -374,9 +484,53 @@ function App() {
     event.target.value = "";
   }
 
-  if (!role) return <LoginView onLogin={setRole} />;
+  async function handleClientLogin(email, password) {
+    const result = await authenticateClient(email, password);
+    if (result.account) {
+      setClientEmail(result.account.email);
+      saveClientSession(result.account.email);
+      setRole("client");
+    }
+    return result;
+  }
+
+  function handleClientRegister(email, password) {
+    return registerClient(email, password);
+  }
+
+  if (!role) {
+    return (
+      <LoginView
+        onLogin={setRole}
+        onClientLogin={handleClientLogin}
+        onClientRegister={handleClientRegister}
+      />
+    );
+  }
 
   const isAdmin = role === "admin";
+
+  function logout() {
+    setRole(null);
+    setClientEmail("");
+    clearClientSession();
+    setSearch("");
+    setClientForm(emptyForm);
+    setClientFormError("");
+    setConfirmation(null);
+    setReceipt(null);
+  }
+
+  function contactSupport() {
+    const copySupportEmail = navigator.clipboard?.writeText(supportEmail);
+    if (copySupportEmail) {
+      copySupportEmail
+        .then(() => setNotice(`Correo copiado: ${supportEmail}`))
+        .catch(() => setNotice(`Escribe a ${supportEmail}`));
+      return;
+    }
+    setNotice(`Escribe a ${supportEmail}`);
+  }
 
   return (
     <div className={isAdmin ? "app-shell client-shell admin-shell" : "app-shell client-shell"}>
@@ -400,6 +554,7 @@ function App() {
             <span aria-hidden="true">⌕</span>
             <input
               aria-label="Buscar orden o cliente"
+              maxLength={80}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Buscar orden o cliente"
@@ -408,16 +563,18 @@ function App() {
         )}
         {!isAdmin && (
           <div className="client-topbar-actions">
-            <button
-              type="button"
+            <span className="client-role" title={clientEmail}>
+              {clientEmail}
+            </span>
+            <a
               className="support-button"
-              onClick={() => {
-                window.location.href = `mailto:${supportEmail}?subject=Solicitud de soporte - Taller Digital`;
-              }}
+              href={`mailto:${supportEmail}?subject=${encodeURIComponent("Solicitud de soporte - Taller Digital")}`}
+              onClick={contactSupport}
+              title={`Contactar a ${supportEmail}`}
             >
               Contactar soporte <span aria-hidden="true">▣</span>
-            </button>
-            <button type="button" className="logout-button" onClick={() => setRole(null)}>
+            </a>
+            <button type="button" className="logout-button" onClick={logout}>
               <span className="logout-copy">
                 <strong>Cerrar sesión</strong>
               </span>
@@ -446,7 +603,7 @@ function App() {
               />
             </label>
             <span className="admin-profile"><b>AD</b> Admin</span>
-            <button type="button" className="text-button" onClick={() => setRole(null)}>Cerrar sesión</button>
+            <button type="button" className="text-button" onClick={logout}>Cerrar sesión</button>
           </div>
         )}
       </header>
@@ -458,11 +615,12 @@ function App() {
       )}
       {isAdmin ? (
         <AdminView
+          version={version}
           search={search}
           setSearch={setSearch}
           repairs={repairs}
           filteredRepairs={filteredRepairs}
-          onLogout={() => setRole(null)}
+          onLogout={logout}
           updateStatus={requestStatusChange}
           updatePhotos={updatePhotos}
           requestDelete={requestDelete}
@@ -471,9 +629,11 @@ function App() {
       ) : (
         <ClientView
           repairs={repairs}
+          clientEmail={clientEmail}
           form={clientForm}
           setForm={setClientForm}
           formError={clientFormError}
+          clearFormError={() => setClientFormError("")}
           addRepair={addClientRepair}
         />
       )}
@@ -505,6 +665,7 @@ function App() {
 }
 
 function AdminView({
+  version,
   search,
   setSearch,
   repairs,
@@ -515,6 +676,19 @@ function AdminView({
   requestDelete,
   openReceipt,
 }) {
+  const ordersSectionRef = useRef(null);
+  const [activeSection, setActiveSection] = useState("dashboard");
+
+  function showOrders() {
+    setActiveSection("orders");
+    ordersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function showDashboard() {
+    setActiveSection("dashboard");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   const statusTotals = repairStatuses.map((status) => ({
     status,
     total: repairs.filter((repair) => repair.status === status).length,
@@ -532,11 +706,20 @@ function AdminView({
         </div>
         <nav className="sidebar-nav">
           <span className="sidebar-section">Principal</span>
-          <button type="button" className="sidebar-link active">
+          <button
+            type="button"
+            className={`sidebar-link ${activeSection === "dashboard" ? "active" : ""}`}
+            onClick={showDashboard}
+          >
             <span className="sidebar-icon">▦</span>
             Dashboard
           </button>
-          <button type="button" className="sidebar-link">
+          <button
+            type="button"
+            className={`sidebar-link ${activeSection === "orders" ? "active" : ""}`}
+            onClick={showOrders}
+            aria-controls="admin-orders"
+          >
             <span className="sidebar-icon">≡</span>
             Órdenes
           </button>
@@ -586,7 +769,7 @@ function AdminView({
           <button type="button" className="sidebar-client-link" onClick={onLogout}>
             Cerrar sesión
           </button>
-          <span>Versión 0.1</span>
+          <span>Versión {version}</span>
         </div>
       </aside>
       <main className="admin-main">
@@ -627,7 +810,12 @@ function AdminView({
             icon="↥"
           />
         </section>
-        <section className="workspace admin-orders-only">
+        <section
+          ref={ordersSectionRef}
+          id="admin-orders"
+          className="workspace admin-orders-only"
+          tabIndex={-1}
+        >
           <OrderList
             search={search}
             setSearch={setSearch}
@@ -661,8 +849,7 @@ function RepairForm({
   setForm,
   formError,
   addRepair,
-  addPhotos,
-  removePhoto,
+  clearFormError,
   className = "",
   title = "Nuevo ingreso",
   subtitle = "(orden de servicio)",
@@ -691,7 +878,10 @@ function RepairForm({
           <button
             type="button"
             className="text-button"
-            onClick={() => setForm(emptyForm)}
+            onClick={() => {
+              setForm(emptyForm);
+              clearFormError?.();
+            }}
           >
             Limpiar
           </button>
@@ -795,6 +985,10 @@ function RepairForm({
         Confirmo que el cliente autoriza la revisión y recibe esta constancia
         del estado del equipo.
       </label>
+      <SignaturePad
+        value={form.signature}
+        onChange={(signature) => setForm({ ...form, signature })}
+      />
       {formError && (
         <p className="form-error" role="alert">
           {formError}
@@ -918,7 +1112,15 @@ function OrderList({
   );
 }
 
-function ClientView({ repairs, form, setForm, formError, addRepair }) {
+function ClientView({
+  repairs,
+  clientEmail,
+  form,
+  setForm,
+  formError,
+  clearFormError,
+  addRepair,
+}) {
   const [code, setCode] = useState("");
   const [result, setResult] = useState(null);
   const [apiDevices, setApiDevices] = useState([]);
@@ -944,14 +1146,24 @@ function ClientView({ repairs, form, setForm, formError, addRepair }) {
     const normalizedCode = code.trim().toUpperCase();
     setResult(
       /^REP-\d{4,8}$/.test(normalizedCode)
-        ? repairs.find((repair) => repair.id === normalizedCode) || false
+        ? repairs.find(
+            (repair) =>
+              repair.id === normalizedCode &&
+              (!repair.ownerEmail || repair.ownerEmail === clientEmail),
+          ) || false
         : false,
     );
   }
 
-  const currentStatusIndex = result
-    ? repairStatuses.indexOf(result.status)
-    : -1;
+  const progressStatusIndex = {
+    Recibido: 0,
+    "En diagnóstico": 1,
+    "Esperando repuesto": 1,
+    "En reparación": 2,
+    "Listo para entregar": 4,
+    Entregado: 4,
+  };
+  const currentStatusIndex = result ? progressStatusIndex[result.status] ?? -1 : -1;
   const deviceSuggestions = [
     ...new Set([
       ...repairs.map((repair) => repair.device),
@@ -968,6 +1180,7 @@ function ClientView({ repairs, form, setForm, formError, addRepair }) {
           form={form}
           setForm={setForm}
           formError={formError}
+          clearFormError={clearFormError}
           addRepair={addRepair}
           title="Solicitar reparación"
           subtitle="(el taller la revisará)"

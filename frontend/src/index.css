@@ -420,6 +420,8 @@ nav {
 .admin-sidebar {
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
   min-height: 720px;
   margin: 28px 0;
   padding: 24px 14px;
@@ -427,6 +429,22 @@ nav {
   color: #1c2930;
   border-right: 1px solid #dfe2df;
   box-shadow: 8px 0 24px rgba(35, 49, 55, 0.04);
+  scrollbar-gutter: stable;
+  scrollbar-color: #7b8b91 transparent;
+  scrollbar-width: thin;
+}
+
+.admin-sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-sidebar::-webkit-scrollbar-thumb {
+  background: #7b8b91;
+  border-radius: 8px;
 }
 
 .sidebar-mark {
@@ -836,6 +854,7 @@ nav {
 
 /* Paneles y formularios */
 .workspace {
+  scroll-margin-top: 24px;
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(330px, 0.75fr);
   gap: 18px;
@@ -1410,6 +1429,10 @@ select:focus {
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.support-button {
+  text-decoration: none;
 }
 
 .support-button span {
@@ -2396,4 +2419,162 @@ select:focus {
 
 .admin-shell .workspace.admin-orders-only > .orders-panel {
   grid-column: 1 / -1;
+}
+
+/* Acabado visual de la versión 0.2 */
+.admin-shell .admin-main {
+  background:
+    radial-gradient(circle at 82% 0%, #1d526044 0, transparent 28%),
+    linear-gradient(180deg, #101c2a 0%, #0d1724 100%);
+}
+
+.admin-shell .dashboard-heading {
+  padding: 8px 0 10px;
+}
+
+.admin-shell .dashboard-heading h2 {
+  letter-spacing: 0.02em;
+}
+
+.admin-shell .dashboard-stats {
+  gap: 16px;
+}
+
+.admin-shell .metric-card {
+  border: 1px solid #ffffff1a;
+  box-shadow: 0 14px 28px #00000024;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-shell .metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px #00000038;
+}
+
+.admin-shell .orders-panel {
+  border-radius: 12px;
+  box-shadow: 0 18px 42px #0000003d, inset 0 1px #ffffff0b;
+}
+
+.admin-shell .panel-heading {
+  padding-bottom: 18px;
+}
+
+.admin-shell .order {
+  padding: 18px 4px;
+  transition: background 160ms ease, padding-inline 160ms ease;
+}
+
+.admin-shell .order:hover {
+  padding-inline: 10px;
+  border-radius: 8px;
+  background: #1a394640;
+}
+
+.admin-shell .photo-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 11px;
+  border: 1px solid #61d8ce66;
+  border-radius: 6px;
+  background: #123846aa;
+  color: #7ce5db;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.admin-shell .photo-update::before {
+  content: "+";
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.admin-shell .photo-update:hover {
+  border-color: #7eece2aa;
+  background: #1c5a63cc;
+  transform: translateY(-1px);
+}
+
+.admin-shell .photo-update input {
+  display: none;
+}
+
+.admin-shell .order > select {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 7px;
+  font-weight: 600;
+}
+
+.admin-shell .order-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 40px;
+}
+
+.admin-shell .order-actions .text-button {
+  padding: 8px 0;
+}
+
+.admin-shell .order-id {
+  color: #72e0d4;
+  font-weight: 700;
+}
+
+.admin-shell .sidebar-link,
+.admin-shell .text-button,
+.admin-shell button,
+.admin-shell a,
+.client-shell button,
+.client-shell a {
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease,
+    transform 160ms ease, box-shadow 160ms ease;
+}
+
+.admin-shell .sidebar-link:not(:disabled):hover {
+  background: #1d56604d;
+  color: #e2fffa;
+}
+
+.admin-shell .sidebar-link.active:hover {
+  background: #25828b99;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid #63e1d5;
+  outline-offset: 3px;
+}
+
+.client-shell .client-role {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .client-shell .client-role {
+    flex-basis: 100%;
+    margin-left: 0;
+    order: -1;
+  }
+
+  .admin-shell .dashboard-stats {
+    gap: 10px;
+  }
 }

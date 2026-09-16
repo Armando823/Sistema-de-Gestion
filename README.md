@@ -17,8 +17,8 @@ Abre la URL que muestre Vite, normalmente `http://localhost:5173`.
 - Panel de administrador para crear ordenes de reparacion.
 - Busqueda por codigo, cliente o equipo.
 - Actualizacion del estado de cada orden.
-- Consulta publica del estado mediante el codigo de la orden.
-- El cliente puede crear una solicitud y consultar el estado de su reparación.
+- Registro e inicio de sesión de clientes mediante correo y contraseña.
+- El cliente puede crear solicitudes y consultar sus reparaciones después de iniciar sesión.
 - El administrador gestiona las solicitudes y agrega las fotos de recepción desde el panel.
 - Persistencia local en el navegador con `localStorage`.
 - Validación básica del alta de órdenes.
@@ -36,28 +36,38 @@ Abre la URL que muestre Vite, normalmente `http://localhost:5173`.
 
 - `src/App.jsx`: flujo principal y navegación del MVP.
 - `src/data/repairData.js`: estados y datos iniciales; aquí se podrán añadir catálogos.
-- `src/services/repairStorage.js`: persistencia actual; se puede reemplazar por una API sin cambiar la pantalla.
+- `src/services/repairStorage.js`: persistencia actual de órdenes; se puede reemplazar por una API sin cambiar la pantalla.
+- `src/services/accountStorage.js`: cuentas locales de clientes para el prototipo.
 - `src/index.css`: estilos de la primera versión.
 - `src/components/modals/`: confirmaciones y constancias de órdenes.
 
 ## Proximo paso
 
-Esta versión no tiene usuarios, backend ni base de datos. Las fotos y firmas se guardan temporalmente en `localStorage`, por lo que no es una solución de respaldo ni una garantía legal. Para producción se debe conectar una API, agregar autenticación, almacenamiento privado de archivos y generar una constancia con fecha y condiciones revisadas legalmente.
+Esta versión no tiene backend ni base de datos. Las cuentas, fotos, firmas y
+órdenes se guardan temporalmente en `localStorage`; las contraseñas se guardan
+como hash, pero el almacenamiento local no es una frontera de seguridad. Para
+producción se debe conectar una API, agregar autenticación de servidor,
+verificación de correo, almacenamiento privado de archivos y generar una
+constancia con fecha y condiciones revisadas legalmente.
 
-## Accesos de demostración
+## Acceso de demostración local
 
-- Cliente: acceso público, sin usuario ni contraseña.
-- Administrador: usuario `jefe`, contraseña `jefe123`.
+- Cliente: debe crear una cuenta con correo y contraseña.
+- Administrador: usuario `jefe`, contraseña `jefe123`, únicamente con `npm run dev`.
 
-El panel administrativo está pensado únicamente para el jefe. Estos accesos funcionan en el frontend para la demostración; para protegerlo realmente en producción se necesita autenticación en un backend.
+El acceso administrativo demo se desactiva en el build de producción para no
+publicar esas credenciales en el bundle. Esto no reemplaza autenticación real:
+antes de desplegar la aplicación se necesita un backend con sesiones seguras,
+autorización por orden y almacenamiento privado.
 
 ## Uso rápido
 
 1. Entra en `frontend` y ejecuta `npm install`.
 2. Ejecuta `npm run dev`.
 3. Abre la dirección que muestre Vite.
-4. Desde el acceso de cliente, completa la solicitud, dibuja la firma y acepta la constancia.
-5. Desde el panel del administrador puedes cambiar el estado y agregar las fotos de recepción.
-6. El cliente puede consultar la orden con el código generado, por ejemplo `REP-1003`.
+4. Crea una cuenta de cliente e inicia sesión.
+5. Completa la solicitud y guarda el código generado.
+6. Desde el panel del administrador puedes cambiar el estado y agregar las fotos de recepción.
+7. El cliente puede consultar sus órdenes con el código generado.
 
 Los datos se conservan únicamente en el navegador actual. Borrar los datos del sitio elimina las órdenes guardadas.
