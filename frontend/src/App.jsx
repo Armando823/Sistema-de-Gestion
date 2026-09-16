@@ -18,8 +18,66 @@ const emptyForm = {
   problem: "",
   photos: [],
   signature: "",
+  authorizedBy: "",
   consent: false,
 };
+
+const demoUsers = {
+  admin: { username: "jefe", password: "jefe123", label: "Administrador" },
+};
+
+const supportEmail = "soporte@tallerdigital.com";
+
+const laptopCatalog = [
+  "HP Pavilion 15",
+  "HP 14",
+  "HP Envy x360",
+  "HP Victus 16",
+  "HP EliteBook 840",
+  "HP ProBook 450",
+  "HP Omen 16",
+  "Lenovo IdeaPad 3",
+  "Lenovo ThinkPad E14",
+  "Lenovo Legion 5",
+  "Lenovo Yoga Slim 7",
+  "Lenovo V15",
+  "Lenovo ThinkBook 15",
+  "Lenovo IdeaPad 5",
+  "Lenovo IdeaPad Flex 5",
+  "Lenovo ThinkPad T14",
+  "Lenovo ThinkPad X1 Carbon",
+  "Lenovo Legion 7",
+  "Lenovo LOQ 15",
+  "Dell Inspiron 15",
+  "Dell Latitude 5420",
+  "Dell XPS 13",
+  "Dell Vostro 15",
+  "Dell G15",
+  "Dell Precision 5560",
+  "Dell Inspiron 14",
+  "Dell Latitude 7440",
+  "Dell XPS 15",
+  "ASUS VivoBook",
+  "ASUS TUF Gaming",
+  "ASUS ZenBook 14",
+  "ASUS ROG Strix G15",
+  "ASUS ExpertBook",
+  "MacBook Air",
+  "MacBook Pro",
+  "MacBook Pro 14",
+  "MacBook Pro 16",
+  "Acer Aspire 5",
+  "Acer Nitro 5",
+  "Acer Swift 3",
+  "Acer Chromebook 315",
+  "MSI Modern 14",
+  "MSI Katana 15",
+  "MSI GF63 Thin",
+  "Samsung Galaxy Book",
+  "Samsung Galaxy Book 3",
+  "Microsoft Surface Laptop",
+  "Microsoft Surface Pro",
+];
 
 function statusClass(status) {
   return `status-${status.toLowerCase().replaceAll(" ", "-")}`;
@@ -42,20 +100,111 @@ function escapeHtml(value) {
 }
 
 function receiptHtml(repair) {
-  return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd></dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${repair.signature ? `<img class="signature" src="${repair.signature}" alt="Firma del cliente">` : ""}</body></html>`;
+  const signatureMarkup = repair.signature?.startsWith("data:image/")
+    ? `<img class="signature" src="${repair.signature}" alt="Firma del cliente">`
+    : "";
+  return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd>${repair.authorizedBy ? `<dt>Recibido por</dt><dd>${escapeHtml(repair.authorizedBy)}</dd>` : ""}</dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${signatureMarkup}</body></html>`;
+}
+
+function LoginView({ onLogin }) {
+  const [adminLogin, setAdminLogin] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  function submit(event) {
+    event.preventDefault();
+    const user = demoUsers.admin;
+    if (username.trim().toLowerCase() !== user.username || password !== user.password) {
+      setError("El usuario o la contraseña no son correctos.");
+      return;
+    }
+    setError("");
+    onLogin("admin");
+  }
+
+  function openAdminLogin() {
+    setAdminLogin(true);
+    setUsername("");
+    setPassword("");
+    setError("");
+  }
+
+  return (
+    <main className={`login-view ${adminLogin ? "login-admin" : "login-client"}`}>
+      <section className="login-card">
+        <div className="login-brand">
+          <span className="sidebar-mark">MC</span>
+          <div>
+            <p className="eyebrow">TALLER DIGITAL</p>
+            <h1>Control de reparaciones</h1>
+          </div>
+        </div>
+        <div className="login-heading">
+          <p className="eyebrow">{adminLogin ? "ACCESO PRIVADO" : "ACCESO PÚBLICO"}</p>
+          <h2>{adminLogin ? "Panel del jefe" : "Consulta tu reparación"}</h2>
+          <p>
+            {adminLogin
+              ? "Este acceso está reservado para la administración del taller."
+              : "Consulta el estado de tu equipo sin crear una cuenta."}
+          </p>
+        </div>
+        {!adminLogin ? (
+          <div className="public-access">
+            <button type="button" className="primary-button" onClick={() => onLogin("client")}>
+              Entrar como cliente
+            </button>
+            <p>Acceso disponible para todos los usuarios de la aplicación.</p>
+            <button type="button" className="private-access" onClick={openAdminLogin}>
+              Acceso privado del jefe
+            </button>
+          </div>
+        ) : (
+          <form className="login-form" onSubmit={submit}>
+            <label>
+              Usuario del jefe
+              <input
+                required
+                autoComplete="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="jefe"
+              />
+            </label>
+            <label>
+              Contraseña
+              <input
+                required
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="********"
+              />
+            </label>
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button type="submit" className="primary-button">Entrar al panel administrativo</button>
+            <button type="button" className="private-access" onClick={() => setAdminLogin(false)}>
+              Volver al acceso de cliente
+            </button>
+          </form>
+        )}
+        <p className="login-note">El acceso de cliente es público. El panel administrativo requiere las credenciales del jefe.</p>
+      </section>
+    </main>
+  );
 }
 
 function App() {
   const [repairs, setRepairs] = useState(loadRepairs);
-  const [view, setView] = useState("admin");
+  const [role, setRole] = useState(null);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
-  const [formError, setFormError] = useState("");
-  const [form, setForm] = useState(emptyForm);
+  const [clientForm, setClientForm] = useState(emptyForm);
+  const [clientFormError, setClientFormError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [receipt, setReceipt] = useState(null);
   const importInputRef = useRef(null);
-      const onClientView = () => setView("client");
   useEffect(() => {
     if (!saveRepairs(repairs))
       setNotice(
@@ -68,22 +217,19 @@ function App() {
     ),
   );
 
-  function addRepair(event) {
-    event.preventDefault();
-    const validationError = validateRepairForm(form);
-    if (validationError) return setFormError(validationError);
-    const nextNumber =
+  function createRepair(formData, clearForm, clearError, noticeMessage) {
+    const timestamp = new Date().toISOString();
+    const id = `REP-${
       Math.max(
         ...repairs.map(
           (repair) => Number(repair.id.replace("REP-", "")) || 1000,
         ),
         1000,
-      ) + 1;
-    const id = `REP-${nextNumber}`;
-    const timestamp = new Date().toISOString();
+      ) + 1
+    }`;
     setRepairs([
       {
-        ...form,
+        ...formData,
         id,
         status: "Recibido",
         createdAt: timestamp,
@@ -92,9 +238,21 @@ function App() {
       },
       ...repairs,
     ]);
-    setForm(emptyForm);
-    setFormError("");
-    setNotice(`${id} creada correctamente`);
+    clearForm();
+    clearError();
+    setNotice(`${id} ${noticeMessage}`);
+  }
+
+  function addClientRepair(event) {
+    event.preventDefault();
+    const validationError = validateRepairForm(clientForm);
+    if (validationError) return setClientFormError(validationError);
+    createRepair(
+      clientForm,
+      () => setClientForm(emptyForm),
+      () => setClientFormError(""),
+      "enviada al taller",
+    );
   }
 
   function requestStatusChange(id, status) {
@@ -216,38 +374,28 @@ function App() {
     event.target.value = "";
   }
 
-  async function addPhotos(event) {
-    const selectedFiles = Array.from(event.target.files);
-    if (selectedFiles.length > repairLimits.photos) {
-      setFormError(`Puedes seleccionar máximo ${repairLimits.photos} fotos.`);
-      event.target.value = "";
-      return;
-    }
-    try {
-      const photos = await Promise.all(selectedFiles.map((file) => readImage(file)));
-      setForm((current) => ({ ...current, photos }));
-      setFormError("");
-    } catch (error) {
-      setFormError(error.message);
-    }
-    event.target.value = "";
-  }
+  if (!role) return <LoginView onLogin={setRole} />;
 
-  function removeFormPhoto(indexToRemove) {
-    setForm((current) => ({
-      ...current,
-      photos: current.photos.filter((_, index) => index !== indexToRemove),
-    }));
-  }
+  const isAdmin = role === "admin";
 
   return (
-    <div className="app-shell">
+    <div className={isAdmin ? "app-shell client-shell admin-shell" : "app-shell client-shell"}>
       <header className="topbar">
-        <div>
-          <span className="eyebrow">TALLER DIGITAL</span>
-          <h1>Control de reparaciones</h1>
-        </div>
-        {view === "admin" && (
+        {!isAdmin ? (
+          <div className="client-topbar-brand">
+            <div>
+              <span className="eyebrow">TALLER DIGITAL</span>
+              <h1>Control de reparaciones</h1>
+            </div>
+            <span className="brand-gear" aria-hidden="true">⚙</span>
+          </div>
+        ) : (
+          <div>
+            <span className="eyebrow">TALLER DIGITAL</span>
+            <h1>Control de reparaciones</h1>
+          </div>
+        )}
+        {isAdmin && (
           <label className="header-search">
             <span aria-hidden="true">⌕</span>
             <input
@@ -258,18 +406,26 @@ function App() {
             />
           </label>
         )}
-        {view === "client" && (
-          <nav>
+        {!isAdmin && (
+          <div className="client-topbar-actions">
             <button
-              className="nav-button"
-              onClick={() => setView("admin")}
+              type="button"
+              className="support-button"
+              onClick={() => {
+                window.location.href = `mailto:${supportEmail}?subject=Solicitud de soporte - Taller Digital`;
+              }}
             >
-              Administrador
+              Contactar soporte <span aria-hidden="true">▣</span>
             </button>
-            <button className="nav-button active">Consulta cliente</button>
-          </nav>
+            <button type="button" className="logout-button" onClick={() => setRole(null)}>
+              <span className="logout-copy">
+                <strong>Cerrar sesión</strong>
+              </span>
+              <b aria-hidden="true">●</b>
+            </button>
+          </div>
         )}
-        {view === "admin" && (
+        {isAdmin && (
           <div className="topbar-tools">
             <span className="system-status"><i /> Sistema activo</span>
             <button
@@ -290,6 +446,7 @@ function App() {
               />
             </label>
             <span className="admin-profile"><b>AD</b> Admin</span>
+            <button type="button" className="text-button" onClick={() => setRole(null)}>Cerrar sesión</button>
           </div>
         )}
       </header>
@@ -299,26 +456,26 @@ function App() {
           <button onClick={() => setNotice("")}>Cerrar</button>
         </div>
       )}
-      {view === "admin" ? (
+      {isAdmin ? (
         <AdminView
-          form={form}
-          setForm={setForm}
-          formError={formError}
-          addRepair={addRepair}
-          addPhotos={addPhotos}
-          removePhoto={removeFormPhoto}
           search={search}
           setSearch={setSearch}
           repairs={repairs}
           filteredRepairs={filteredRepairs}
-          onClientView={onClientView}
+          onLogout={() => setRole(null)}
           updateStatus={requestStatusChange}
           updatePhotos={updatePhotos}
           requestDelete={requestDelete}
           openReceipt={setReceipt}
         />
       ) : (
-        <ClientView repairs={repairs} />
+        <ClientView
+          repairs={repairs}
+          form={clientForm}
+          setForm={setClientForm}
+          formError={clientFormError}
+          addRepair={addClientRepair}
+        />
       )}
       {confirmation && (
         <ConfirmModal
@@ -348,21 +505,15 @@ function App() {
 }
 
 function AdminView({
-  form,
-  setForm,
-  formError,
-  addRepair,
-  addPhotos,
   search,
   setSearch,
   repairs,
   filteredRepairs,
-  onClientView,
+  onLogout,
   updateStatus,
   updatePhotos,
   requestDelete,
   openReceipt,
-  removePhoto,
 }) {
   const statusTotals = repairStatuses.map((status) => ({
     status,
@@ -432,12 +583,8 @@ function AdminView({
           </button>
         </nav>
         <div className="sidebar-footer">
-          <button
-            type="button"
-            className="sidebar-client-link"
-            onClick={onClientView}
-          >
-            Consulta cliente
+          <button type="button" className="sidebar-client-link" onClick={onLogout}>
+            Cerrar sesión
           </button>
           <span>Versión 0.1</span>
         </div>
@@ -446,8 +593,8 @@ function AdminView({
         <section className="dashboard-heading">
           <div>
             <p className="eyebrow">OPERACIONES HOY</p>
-            <h2>Operaciones hoy</h2>
-            <p>Registra órdenes y consulta el estado de cada reparación.</p>
+            <h2>Solicitudes recibidas</h2>
+            <p>Gestiona órdenes creadas por los clientes y agrega sus imágenes.</p>
           </div>
           <div className="summary">
             <strong>{repairs.length}</strong>
@@ -480,15 +627,7 @@ function AdminView({
             icon="↥"
           />
         </section>
-        <section className="workspace">
-          <RepairForm
-            form={form}
-            setForm={setForm}
-            formError={formError}
-            addRepair={addRepair}
-            addPhotos={addPhotos}
-            removePhoto={removePhoto}
-          />
+        <section className="workspace admin-orders-only">
           <OrderList
             search={search}
             setSearch={setSearch}
@@ -524,11 +663,30 @@ function RepairForm({
   addRepair,
   addPhotos,
   removePhoto,
+  className = "",
+  title = "Nuevo ingreso",
+  subtitle = "(orden de servicio)",
+  submitLabel = "Crear orden",
+  deviceSuggestions = [],
 }) {
+  const [showAllDevices, setShowAllDevices] = useState(false);
+  const normalizedDevice = form.device.trim().toLowerCase();
+  const hasExactDevice = deviceSuggestions.some(
+    (device) => device.toLowerCase() === normalizedDevice,
+  );
+  const matchingDevices = normalizedDevice && !hasExactDevice
+    ? (showAllDevices
+        ? deviceSuggestions
+        : deviceSuggestions
+        .filter((device) =>
+          device.toLowerCase().includes(normalizedDevice),
+        ))
+    : [];
+
   return (
-    <form className="panel form-panel" onSubmit={addRepair}>
+    <form className={`panel form-panel ${className}`} onSubmit={addRepair}>
       <div className="panel-heading">
-        <h3>Nuevo ingreso <small>(orden de servicio)</small></h3>
+        <h3>{title} <small>{subtitle}</small></h3>
         <div className="form-heading-actions">
           <button
             type="button"
@@ -563,14 +721,44 @@ function RepairForm({
         />
       </label>
       <label>
-        Equipo
+        Laptop
         <input
           required
           maxLength={repairLimits.device}
           value={form.device}
-          onChange={(event) => setForm({ ...form, device: event.target.value })}
-          placeholder="Marca, modelo y serial"
+          onChange={(event) => {
+            setShowAllDevices(false);
+            setForm({ ...form, device: event.target.value });
+          }}
+          autoComplete="off"
+          placeholder="Ej. HP Pavilion 15 - SN12345"
         />
+        <small className="field-help">Escribe marca, modelo y serial de la laptop.</small>
+        {matchingDevices.length > 0 && (
+          <div className="device-suggestions" aria-label="Modelos sugeridos">
+            {!showAllDevices && deviceSuggestions.length > matchingDevices.length && (
+              <button
+                type="button"
+                className="show-all-devices"
+                onClick={() => setShowAllDevices(true)}
+              >
+                Ver todos los modelos ({deviceSuggestions.length})
+              </button>
+            )}
+            {matchingDevices.map((device) => (
+              <button
+                type="button"
+                key={device}
+                onClick={() => {
+                  setShowAllDevices(false);
+                  setForm({ ...form, device });
+                }}
+              >
+                {device}
+              </button>
+            ))}
+          </div>
+        )}
       </label>
       <label>
         Falla reportada
@@ -585,10 +773,15 @@ function RepairForm({
         />
       </label>
       <label>
-        Firma del cliente
-        <SignaturePad
-          value={form.signature}
-          onChange={(signature) => setForm({ ...form, signature })}
+        Nombre de quien entrega
+        <input
+          required
+          maxLength={repairLimits.customer}
+          value={form.authorizedBy}
+          onChange={(event) =>
+            setForm({ ...form, authorizedBy: event.target.value })
+          }
+          placeholder="Nombre completo"
         />
       </label>
       <label className="consent">
@@ -608,7 +801,7 @@ function RepairForm({
         </p>
       )}
       <button type="submit" className="primary-button">
-        Crear orden
+        {submitLabel}
       </button>
     </form>
   );
@@ -623,21 +816,28 @@ function OrderList({
   requestDelete,
   openReceipt,
 }) {
+  const pendingCount = filteredRepairs.filter(
+    (repair) => repair.status === "Recibido",
+  ).length;
+
   return (
     <section className="panel orders-panel">
       <div className="panel-heading">
         <div>
-          <h3>Últimas órdenes</h3>
-          <p>{filteredRepairs.length} resultados</p>
+          <h3>Solicitudes recibidas</h3>
+          <p>
+            {filteredRepairs.length} solicitud(es)
+            {pendingCount > 0 ? ` · ${pendingCount} pendiente(s)` : ""}
+          </p>
         </div>
         <div className="search-controls">
           <input
             maxLength="80"
             className="search"
-            aria-label="Buscar órdenes"
+            aria-label="Buscar solicitudes"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar orden o cliente"
+            placeholder="Buscar solicitud o cliente"
           />
           {search && (
             <button
@@ -664,13 +864,17 @@ function OrderList({
               </p>
               <small>
                 {repair.photos?.length || 0} foto(s) ·{" "}
-                {repair.signature ? "Firmada" : "Sin firma"}
+                {repair.authorizedBy
+                  ? "Autorizada"
+                  : repair.signature
+                    ? "Firmada"
+                    : "Sin autorización"}
               </small>
               <span className={`status-badge ${statusClass(repair.status)}`}>
                 {repair.status}
               </span>
               <label className="photo-update">
-                Actualizar fotos
+                Agregar / actualizar fotos
                 <input
                   type="file"
                   accept="image/*"
@@ -714,9 +918,27 @@ function OrderList({
   );
 }
 
-function ClientView({ repairs }) {
+function ClientView({ repairs, form, setForm, formError, addRepair }) {
   const [code, setCode] = useState("");
   const [result, setResult] = useState(null);
+  const [apiDevices, setApiDevices] = useState([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("https://dummyjson.com/products/category/laptops?limit=0", {
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const devices = Array.isArray(data?.products)
+          ? data.products.map((product) => product.title).filter(Boolean)
+          : [];
+        setApiDevices(devices);
+      })
+      .catch(() => setApiDevices([]));
+
+    return () => controller.abort();
+  }, []);
   function findRepair(event) {
     event.preventDefault();
     const normalizedCode = code.trim().toUpperCase();
@@ -726,56 +948,133 @@ function ClientView({ repairs }) {
         : false,
     );
   }
+
+  const currentStatusIndex = result
+    ? repairStatuses.indexOf(result.status)
+    : -1;
+  const deviceSuggestions = [
+    ...new Set([
+      ...repairs.map((repair) => repair.device),
+      ...apiDevices,
+      ...laptopCatalog,
+    ]),
+  ];
+
   return (
     <main className="client-view">
-      <div className="client-card">
-        <p className="eyebrow">ÁREA DEL CLIENTE</p>
-        <h2>¿Dónde está tu equipo?</h2>
+      <div className="client-portal-grid">
+        <RepairForm
+          className="client-request-form"
+          form={form}
+          setForm={setForm}
+          formError={formError}
+          addRepair={addRepair}
+          title="Solicitar reparación"
+          subtitle="(el taller la revisará)"
+          submitLabel="Enviar solicitud"
+          deviceSuggestions={deviceSuggestions}
+        />
+        <div className="client-card">
+        <div className="client-kicker">
+          <span className="client-mark">MC</span>
+          <p className="eyebrow">ÁREA DEL CLIENTE</p>
+        </div>
+        <h2>Consulta tu reparación</h2>
         <p>
-          El administrador crea la orden en el taller. Tú solo necesitas
-          ingresar el código recibido para consultar su estado.
+          Ingresa el código de tu orden para conocer el estado actual de tu
+          equipo y las últimas novedades del taller.
         </p>
         <form onSubmit={findRepair} className="lookup">
           <input
             required
             maxLength="12"
+            aria-label="Código de reparación"
             value={code}
-            onChange={(event) => setCode(event.target.value)}
-            placeholder="Ej. REP-1001"
+            onChange={(event) => setCode(event.target.value.toUpperCase())}
+            placeholder="Código: REP-1001"
           />
-          <button className="primary-button">Consultar</button>
+          <button type="submit" className="primary-button">Consultar estado</button>
         </form>
         {result && (
           <div className="result">
-            <span className="status-dot" />
-            <div>
-              <strong>{result.status}</strong>
-              <p>{result.device}</p>
-              <small>Última actualización: {result.updated}</small>
-              {result.photos?.length > 0 && (
-                <div className="client-photos">
-                  <strong>Fotos del equipo</strong>
-                  <div className="photo-preview">
-                    {result.photos.map((photo, index) => (
-                      <img
-                        key={photo}
-                        src={photo}
-                        alt={`Foto del equipo ${index + 1}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="result-heading">
+              <div>
+                <span className="result-label">ORDEN {result.id}</span>
+                <strong>{result.status}</strong>
+              </div>
+              <span className={`status-badge ${statusClass(result.status)}`}>
+                En seguimiento
+              </span>
             </div>
+            <div className="client-progress" aria-label="Progreso de la reparación">
+              {[
+                ["Recibido", "▣"],
+                ["Diagnóstico", "⌕"],
+                ["Reparación", "⚒"],
+                ["Control de calidad", "✓"],
+                ["Listo para recoger", "➜"],
+              ].map(([status, icon], index) => (
+                <div
+                  className={index <= Math.min(currentStatusIndex, 4) ? "progress-step complete" : "progress-step"}
+                  key={status}
+                >
+                  <span className="progress-icon">{icon}</span>
+                  <small>{status}</small>
+                </div>
+              ))}
+            </div>
+            <div className="client-details">
+              <div>
+                <small>Equipo</small>
+                <strong>{result.device}</strong>
+              </div>
+              <div>
+                <small>Cliente</small>
+                <strong>{result.customer}</strong>
+              </div>
+              <div>
+                <small>Última actualización</small>
+                <strong>{result.updated}</strong>
+              </div>
+              <div>
+                <small>Falla reportada</small>
+                <strong>{result.problem}</strong>
+              </div>
+            </div>
+            {result.photos?.length > 0 && (
+              <div className="client-photos">
+                <div className="section-label">
+                  <strong>Fotos de recepción</strong>
+                  <span>{result.photos.length} archivo(s)</span>
+                </div>
+                <div className="photo-preview">
+                  {result.photos.map((photo, index) => (
+                    <img
+                      key={photo}
+                      src={photo}
+                      alt={`Foto del equipo ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="client-note">Te avisaremos cuando el estado de tu equipo cambie.</p>
+          </div>
+        )}
+        {result === null && (
+          <div className="client-benefits" aria-label="Información de consulta">
+            <span>Seguimiento en línea</span>
+            <span>Información actualizada</span>
+            <span>Consulta disponible siempre</span>
           </div>
         )}
         {result === false && (
-          <p className="error">No encontramos una orden con ese código.</p>
+          <p className="error" role="alert">No encontramos una orden con ese código. Revisa que esté escrito correctamente.</p>
         )}
         <p className="demo-hint">
-          Prueba con{" "}
-          <button onClick={() => setCode("REP-1001")}>REP-1001</button>
+          Código de prueba: <button type="button" onClick={() => setCode("REP-1001")}>REP-1001</button>
         </p>
+        </div>
       </div>
     </main>
   );

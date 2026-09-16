@@ -43,12 +43,12 @@ export function validateRepairForm(form) {
     return "El equipo es obligatorio y debe tener hasta 80 caracteres.";
   if (!isText(form.problem, repairLimits.problem))
     return "La falla es obligatoria y debe tener hasta 500 caracteres.";
-  if (!Array.isArray(form.photos) || form.photos.length === 0)
-    return "Agrega al menos una foto del equipo como evidencia de recepción.";
+  if (!Array.isArray(form.photos))
+    return "El campo de fotos debe ser una lista válida.";
   if (form.photos.length > repairLimits.photos)
     return `Puedes agregar máximo ${repairLimits.photos} fotos del equipo.`;
-  if (typeof form.signature !== "string" || !form.signature)
-    return "La firma del cliente es obligatoria.";
+  if (!isText(form.authorizedBy, repairLimits.customer))
+    return "El nombre de quien entrega la laptop es obligatorio.";
   if (form.consent !== true)
     return "Debes confirmar la autorización del cliente.";
   return "";
