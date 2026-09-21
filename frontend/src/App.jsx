@@ -37,9 +37,9 @@ const emptyForm = {
   consent: false,
 };
 
-const demoUsers = import.meta.env.DEV
-  ? { admin: { username: "Admin", password: "Admin123", label: "Administrador" } }
-  : null;
+const demoUsers = {
+  admin: { username: "admin", password: "Admin123", label: "Administrador" },
+};
 
 const supportEmail = "soporte@tallerdigital.com";
 
@@ -227,7 +227,7 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
                 autoComplete="username"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="jefe"
+                placeholder="admin"
               />
             </label>
             <label>
@@ -258,7 +258,7 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
             <p>Necesitas una cuenta para crear y consultar tus reparaciones.</p>
             {demoUsers && (
               <button type="button" className="private-access" onClick={openAdminLogin}>
-                Acceso demo privado del jefe
+                Acceso administrativo
               </button>
             )}
           </div>
@@ -311,8 +311,8 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
           </form>
         )}
         <p className="login-note">
-          Los clientes usan una cuenta propia. El acceso demo administrativo
-          solo está disponible durante el desarrollo local.
+          Los clientes usan una cuenta propia. El acceso administrativo está
+          disponible para gestionar el taller.
         </p>
       </section>
     </main>
@@ -757,13 +757,7 @@ function AdminView({
     if (companyLogo) saveSetting("workshop-logo", companyLogo);
     else deleteSetting("workshop-logo");
   }, [companyLogo, logoReady]);
-  const inventoryFallback = [
-    { id: 1, item: "Pantalla HP 15.6 FHD", sku: "LCD-HP156-FHD", category: "Pantallas", stock: 8, minimum: 4, cost: 185000, supplier: "Partes Express" },
-    { id: 2, item: "Teclado HP Español", sku: "KBD-HP-ES", category: "Teclados", stock: 7, minimum: 8, cost: 68000, supplier: "CompuRepuestos" },
-    { id: 3, item: "Cable USB-C 65W", sku: "CAB-USBC-65", category: "Cargadores", stock: 24, minimum: 10, cost: 32000, supplier: "Partes Express" },
-    { id: 4, item: "Batería Lenovo L20M4PC0", sku: "BAT-LNV-L20", category: "Baterías", stock: 3, minimum: 5, cost: 210000, supplier: "TecnoSupply" },
-    { id: 5, item: "SSD NVMe 512 GB", sku: "SSD-NVME-512", category: "Almacenamiento", stock: 12, minimum: 6, cost: 168000, supplier: "TecnoSupply" },
-  ];
+  const inventoryFallback = [];
   const [inventoryData, setInventoryData] = useState([]);
   const [inventoryReady, setInventoryReady] = useState(false);
   useEffect(() => {
@@ -787,11 +781,7 @@ function AdminView({
     cost: "",
     supplier: "",
   });
-  const [clientsData, setClientsData] = useState([
-    { id: 1, name: "Laura Gómez", email: "laura@test.com", phone: "+51 987 321 654", device: "Lenovo IdeaPad 3", warrantyUntil: "2026-12-20", tickets: 2, lastService: "12/09/2026" },
-    { id: 2, name: "Carlos Ruiz", email: "carlos@test.com", phone: "+51 976 442 118", device: "HP Pavilion 15", warrantyUntil: "2026-10-04", tickets: 1, lastService: "04/09/2026" },
-    { id: 3, name: "Ana García", email: "ana@test.com", phone: "+51 965 703 221", device: "Dell Inspiron 15", warrantyUntil: "2027-02-18", tickets: 3, lastService: "18/08/2026" },
-  ]);
+  const [clientsData, setClientsData] = useState([]);
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("Todos");
   const [reportPeriod, setReportPeriod] = useState("all");
@@ -1264,7 +1254,10 @@ function AdminView({
         )}
 
         {activeSection === "settings" && (
-          <form className="panel settings-panel" onSubmit={(event) => { event.preventDefault(); setSettingsSaved(true); }}>
+          <form className="panel settings-panel" onSubmit={async (event) => {
+            event.preventDefault();
+            setSettingsSaved(await saveSetting("workshop-settings", settings));
+          }}>
             <div className="panel-heading">
               <div>
                 <h3>Ajustes</h3>
@@ -1294,7 +1287,7 @@ function AdminView({
               <label><input type="checkbox" checked={settings.automaticReport} onChange={() => setSettings({ ...settings, automaticReport: !settings.automaticReport })} />Generar resumen operativo automático</label>
               <label><input type="checkbox" checked={settings.darkMode} onChange={() => setSettings({ ...settings, darkMode: !settings.darkMode })} />Modo oscuro del panel administrativo</label>
             </div>
-            <div className="settings-footer"><small>Última configuración guardada en este navegador.</small><button type="submit" className="inventory-save">Guardar ajustes</button></div>
+            <div className="settings-footer"><small>Configuración guardada localmente.</small><button type="submit" className="inventory-save">Guardar ajustes</button></div>
           </form>
         )}
       </main>
@@ -1737,9 +1730,6 @@ function ClientView({
         {result === false && (
           <p className="error" role="alert">No encontramos una orden con ese código. Revisa que esté escrito correctamente.</p>
         )}
-        <p className="demo-hint">
-          Código de prueba: <button type="button" onClick={() => setCode("REP-1001")}>REP-1001</button>
-        </p>
         </div>
       </div>
     </main>
