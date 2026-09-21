@@ -3,17 +3,50 @@
   "version": "0.1.0",
   "private": true,
   "main": "main.js",
+  "description": "Sistema local de gestión de reparaciones para Taller Digital",
+  "author": "Taller Digital",
   "scripts": {
     "build": "npm --prefix frontend run build",
     "start": "npm run build && electron .",
     "electron": "electron .",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "dist": "npm run build && electron-builder --win nsis",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
-    "better-sqlite3": "^12.4.1",
-    "electron": "^39.1.2"
+    "better-sqlite3": "^12.4.1"
   },
   "devDependencies": {
-    "electron-rebuild": "^3.2.9"
+    "electron": "^39.1.2",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.tallerdigital.gestion",
+    "productName": "Taller Digital",
+    "artifactName": "Taller-Digital-Setup-${version}.${ext}",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "frontend/dist/**/*",
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Taller Digital"
+    }
   }
 }

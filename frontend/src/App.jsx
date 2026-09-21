@@ -38,7 +38,7 @@ const emptyForm = {
 };
 
 const demoUsers = import.meta.env.DEV
-  ? { admin: { username: "jefe", password: "jefe123", label: "Administrador" } }
+  ? { admin: { username: "Admin", password: "Admin123", label: "Administrador" } }
   : null;
 
 const supportEmail = "soporte@tallerdigital.com";

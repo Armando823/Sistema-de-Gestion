@@ -11,6 +11,16 @@ npm start
 
 Esto compila el frontend y abre la aplicación de escritorio con Electron.
 
+Para generar el instalador de Windows:
+
+```bash
+npm run dist
+```
+
+El instalador se genera en `release/Taller-Digital-Setup-0.1.0.exe`. Al
+instalarlo, la base de datos se crea automáticamente en la carpeta de datos
+del usuario de Windows.
+
 Para ejecutar solo la versión web durante el desarrollo:
 
 ```bash
