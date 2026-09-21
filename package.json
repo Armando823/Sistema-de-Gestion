@@ -1,0 +1,19 @@
+{
+  "name": "sistema-de-gestion-electron",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "start": "npm run build && electron .",
+    "electron": "electron .",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "electron": "^39.1.2"
+  },
+  "devDependencies": {
+    "electron-rebuild": "^3.2.9"
+  }
+}

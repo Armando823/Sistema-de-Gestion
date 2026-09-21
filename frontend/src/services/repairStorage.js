@@ -1,14 +1,11 @@
 import { initialRepairs } from "../data/repairData";
 import { isValidRepair } from "../utils/repairValidation";
+import { loadRepairs as readRepairs, saveRepairs as writeRepairs } from "./dbService";
 
-const STORAGE_KEY = "repairs";
-
-export function loadRepairs() {
+export async function loadRepairs() {
   try {
-    const savedRepairs = localStorage.getItem(STORAGE_KEY);
-    const parsedRepairs = savedRepairs
-      ? JSON.parse(savedRepairs)
-      : initialRepairs;
+    const savedRepairs = await readRepairs();
+    const parsedRepairs = savedRepairs.length > 0 ? savedRepairs : initialRepairs;
     return Array.isArray(parsedRepairs)
       ? parsedRepairs.filter(isValidRepair).slice(0, 500)
       : initialRepairs;
@@ -17,15 +14,10 @@ export function loadRepairs() {
   }
 }
 
-export function saveRepairs(repairs) {
+export async function saveRepairs(repairs) {
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(repairs.filter(isValidRepair).slice(0, 500)),
-    );
-    return true;
+    return await writeRepairs(repairs.filter(isValidRepair).slice(0, 500));
   } catch {
-    // El almacenamiento local puede estar bloqueado o lleno; la app sigue funcionando en memoria.
     return false;
   }
 }

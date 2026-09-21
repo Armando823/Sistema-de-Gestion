@@ -18,6 +18,13 @@ import {
   repairLimits,
   validateRepairForm,
 } from "./utils/repairValidation";
+import {
+  loadInventory,
+  deleteSetting,
+  readSetting,
+  saveInventory,
+  saveSetting,
+} from "./services/dbService";
 
 const emptyForm = {
   customer: "",
@@ -313,49 +320,69 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
 }
 
 function App({ version = "Final" }) {
-  const [repairs, setRepairs] = useState(loadRepairs);
-  const [clientEmail, setClientEmail] = useState(readClientSession);
-  const [role, setRole] = useState(() =>
-    readClientSession() ? "client" : null,
-  );
+  const [repairs, setRepairs] = useState([]);
+  const [clientEmail, setClientEmail] = useState("");
+  const [role, setRole] = useState(null);
+  const [dataReady, setDataReady] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
-  const [settings, setSettings] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem("workshop-settings")) || {};
-      return {
-        ...defaultSettings,
-        ...saved,
-        currency: saved.currency === "COP - Peso colombiano"
-          ? defaultSettings.currency
-          : saved.currency || defaultSettings.currency,
-      };
-    } catch {
-      return defaultSettings;
-    }
-  });
+  const [settings, setSettings] = useState(defaultSettings);
   const [clientForm, setClientForm] = useState(emptyForm);
   const [clientFormError, setClientFormError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [receipt, setReceipt] = useState(null);
   const importInputRef = useRef(null);
   useEffect(() => {
-    if (!saveRepairs(repairs))
-      setNotice(
-        "No se pudieron guardar los cambios: el almacenamiento está lleno o bloqueado.",
-      );
-  }, [repairs]);
+    let cancelled = false;
+    Promise.allSettled([
+      loadRepairs(),
+      readClientSession(),
+      readSetting("workshop-settings", {}),
+    ]).then(([repairsResult, sessionResult, settingsResult]) => {
+      if (cancelled) return;
+      const savedRepairs = repairsResult.status === "fulfilled" ? repairsResult.value : [];
+      const sessionEmail = sessionResult.status === "fulfilled" ? sessionResult.value : "";
+      const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
+      setRepairs(savedRepairs);
+      setClientEmail(sessionEmail);
+      setRole(sessionEmail ? "client" : null);
+      setSettings({
+        ...defaultSettings,
+        ...savedSettings,
+        currency: savedSettings.currency === "COP - Peso colombiano"
+          ? defaultSettings.currency
+          : savedSettings.currency || defaultSettings.currency,
+      });
+      setDataReady(true);
+    }).catch(() => {
+      if (cancelled) return;
+      setRepairs([]);
+      setClientEmail("");
+      setRole(null);
+      setSettings(defaultSettings);
+      setNotice("No se pudo cargar la base de datos local.");
+      setDataReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
-    try {
-      localStorage.setItem("workshop-settings", JSON.stringify(settings));
-    } catch {
-    }
-  }, [settings]);
+    if (!dataReady) return;
+    saveRepairs(repairs).then((saved) => {
+      if (!saved) setNotice("No se pudieron guardar los cambios en la base de datos local.");
+    });
+  }, [dataReady, repairs]);
+  useEffect(() => {
+    if (dataReady) saveSetting("workshop-settings", settings);
+  }, [dataReady, settings]);
   const filteredRepairs = repairs.filter((repair) =>
     [repair.id, repair.customer, repair.device].some((value) =>
       value.toLowerCase().includes(search.toLowerCase()),
     ),
   );
+
+  if (!dataReady) return null;
 
   function createRepair(formData, clearForm, clearError, noticeMessage) {
     const timestamp = new Date().toISOString();
@@ -523,7 +550,7 @@ function App({ version = "Final" }) {
     const result = await authenticateClient(email, password);
     if (result.account) {
       setClientEmail(result.account.email);
-      saveClientSession(result.account.email);
+      await saveClientSession(result.account.email);
       setRole("client");
     }
     return result;
@@ -717,35 +744,37 @@ function AdminView({
 }) {
   const ordersSectionRef = useRef(null);
   const [activeSection, setActiveSection] = useState("dashboard");
-  const [companyLogo, setCompanyLogo] = useState(() => {
-    try {
-      return localStorage.getItem("workshop-logo") || "";
-    } catch {
-      return "";
-    }
-  });
+  const [companyLogo, setCompanyLogo] = useState("");
+  const [logoReady, setLogoReady] = useState(false);
   useEffect(() => {
-    try {
-      if (companyLogo) localStorage.setItem("workshop-logo", companyLogo);
-      else localStorage.removeItem("workshop-logo");
-    } catch {
-    }
-  }, [companyLogo]);
-  const [inventoryData, setInventoryData] = useState(() => {
-    const fallback = [
-      { id: 1, item: "Pantalla HP 15.6 FHD", sku: "LCD-HP156-FHD", category: "Pantallas", stock: 8, minimum: 4, cost: 185000, supplier: "Partes Express" },
-      { id: 2, item: "Teclado HP Español", sku: "KBD-HP-ES", category: "Teclados", stock: 7, minimum: 8, cost: 68000, supplier: "CompuRepuestos" },
-      { id: 3, item: "Cable USB-C 65W", sku: "CAB-USBC-65", category: "Cargadores", stock: 24, minimum: 10, cost: 32000, supplier: "Partes Express" },
-      { id: 4, item: "Batería Lenovo L20M4PC0", sku: "BAT-LNV-L20", category: "Baterías", stock: 3, minimum: 5, cost: 210000, supplier: "TecnoSupply" },
-      { id: 5, item: "SSD NVMe 512 GB", sku: "SSD-NVME-512", category: "Almacenamiento", stock: 12, minimum: 6, cost: 168000, supplier: "TecnoSupply" },
-    ];
-    try {
-      const saved = JSON.parse(localStorage.getItem("workshop-inventory"));
-      return Array.isArray(saved) && saved.length > 0 ? saved : fallback;
-    } catch {
-      return fallback;
-    }
-  });
+    readSetting("workshop-logo", "").then((savedLogo) => {
+      setCompanyLogo(savedLogo || "");
+      setLogoReady(true);
+    });
+  }, []);
+  useEffect(() => {
+    if (!logoReady) return;
+    if (companyLogo) saveSetting("workshop-logo", companyLogo);
+    else deleteSetting("workshop-logo");
+  }, [companyLogo, logoReady]);
+  const inventoryFallback = [
+    { id: 1, item: "Pantalla HP 15.6 FHD", sku: "LCD-HP156-FHD", category: "Pantallas", stock: 8, minimum: 4, cost: 185000, supplier: "Partes Express" },
+    { id: 2, item: "Teclado HP Español", sku: "KBD-HP-ES", category: "Teclados", stock: 7, minimum: 8, cost: 68000, supplier: "CompuRepuestos" },
+    { id: 3, item: "Cable USB-C 65W", sku: "CAB-USBC-65", category: "Cargadores", stock: 24, minimum: 10, cost: 32000, supplier: "Partes Express" },
+    { id: 4, item: "Batería Lenovo L20M4PC0", sku: "BAT-LNV-L20", category: "Baterías", stock: 3, minimum: 5, cost: 210000, supplier: "TecnoSupply" },
+    { id: 5, item: "SSD NVMe 512 GB", sku: "SSD-NVME-512", category: "Almacenamiento", stock: 12, minimum: 6, cost: 168000, supplier: "TecnoSupply" },
+  ];
+  const [inventoryData, setInventoryData] = useState([]);
+  const [inventoryReady, setInventoryReady] = useState(false);
+  useEffect(() => {
+    loadInventory().then((savedInventory) => {
+      setInventoryData(savedInventory.length > 0 ? savedInventory : inventoryFallback);
+      setInventoryReady(true);
+    });
+  }, []);
+  useEffect(() => {
+    if (inventoryReady) saveInventory(inventoryData);
+  }, [inventoryData, inventoryReady]);
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("Todos");
   const [editingInventoryId, setEditingInventoryId] = useState(null);
@@ -758,12 +787,6 @@ function AdminView({
     cost: "",
     supplier: "",
   });
-  useEffect(() => {
-    try {
-      localStorage.setItem("workshop-inventory", JSON.stringify(inventoryData));
-    } catch {
-    }
-  }, [inventoryData]);
   const [clientsData, setClientsData] = useState([
     { id: 1, name: "Laura Gómez", email: "laura@test.com", phone: "+51 987 321 654", device: "Lenovo IdeaPad 3", warrantyUntil: "2026-12-20", tickets: 2, lastService: "12/09/2026" },
     { id: 2, name: "Carlos Ruiz", email: "carlos@test.com", phone: "+51 976 442 118", device: "HP Pavilion 15", warrantyUntil: "2026-10-04", tickets: 1, lastService: "04/09/2026" },
@@ -1068,19 +1091,18 @@ function AdminView({
               <div className="inventory-form-title">
                 <div>
                   <strong>{editingInventoryId ? "Editar repuesto" : "Agregar repuesto"}</strong>
-                  <span>Registra manualmente las piezas que utiliza el taller.</span>
                 </div>
                 {editingInventoryId && <button type="button" className="inventory-cancel" onClick={resetInventoryForm}>Cancelar edición</button>}
               </div>
               <div className="inventory-form-fields">
-                <input required value={inventoryForm.item} onChange={(event) => setInventoryForm({ ...inventoryForm, item: event.target.value })} placeholder="Nombre del repuesto" />
-                <input required value={inventoryForm.sku} onChange={(event) => setInventoryForm({ ...inventoryForm, sku: event.target.value })} placeholder="SKU o referencia" />
+                <input required aria-label="Nombre del repuesto" value={inventoryForm.item} onChange={(event) => setInventoryForm({ ...inventoryForm, item: event.target.value })} placeholder="Repuesto" />
+                <input required aria-label="SKU o referencia" value={inventoryForm.sku} onChange={(event) => setInventoryForm({ ...inventoryForm, sku: event.target.value })} placeholder="SKU" />
                 <input required value={inventoryForm.category} onChange={(event) => setInventoryForm({ ...inventoryForm, category: event.target.value })} placeholder="Categoría" />
-                <input required type="number" min="0" value={inventoryForm.stock} onChange={(event) => setInventoryForm({ ...inventoryForm, stock: event.target.value })} placeholder="Existencias" />
-                <input required type="number" min="0" value={inventoryForm.minimum} onChange={(event) => setInventoryForm({ ...inventoryForm, minimum: event.target.value })} placeholder="Stock mínimo" />
-                <input required type="number" min="0" value={inventoryForm.cost} onChange={(event) => setInventoryForm({ ...inventoryForm, cost: event.target.value })} placeholder="Costo unitario" />
+                <input required aria-label="Existencias" type="number" min="0" value={inventoryForm.stock} onChange={(event) => setInventoryForm({ ...inventoryForm, stock: event.target.value })} placeholder="Cantidad" />
+                <input required aria-label="Stock mínimo" type="number" min="0" value={inventoryForm.minimum} onChange={(event) => setInventoryForm({ ...inventoryForm, minimum: event.target.value })} placeholder="Mínimo" />
+                <input required aria-label="Costo unitario" type="number" min="0" value={inventoryForm.cost} onChange={(event) => setInventoryForm({ ...inventoryForm, cost: event.target.value })} placeholder="Costo" />
                 <input required value={inventoryForm.supplier} onChange={(event) => setInventoryForm({ ...inventoryForm, supplier: event.target.value })} placeholder="Proveedor" />
-                <button type="submit" className="inventory-save">{editingInventoryId ? "Guardar cambios" : "Agregar al inventario"}</button>
+                <button type="submit" className="inventory-save">{editingInventoryId ? "Guardar cambios" : "Guardar repuesto"}</button>
               </div>
             </form>
             <div className="inventory-overview">

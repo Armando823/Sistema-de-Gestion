@@ -1313,11 +1313,9 @@ nav {
 }
 
 .inventory-form {
-  margin-bottom: 20px;
-  padding: 16px;
-  border: 1px dashed #b9d5ce;
-  border-radius: 14px;
-  background: #f8fcfb;
+  margin-bottom: 18px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid #dce5e2;
 }
 
 .inventory-form-title {
@@ -1325,7 +1323,7 @@ nav {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .inventory-form-title strong,
@@ -1335,12 +1333,7 @@ nav {
 
 .inventory-form-title strong {
   color: #173f3a;
-}
-
-.inventory-form-title span {
-  margin-top: 4px;
-  color: #71827f;
-  font-size: 0.75rem;
+  font-size: 0.95rem;
 }
 
 .inventory-form-fields {
@@ -1352,7 +1345,7 @@ nav {
 .inventory-form-fields input {
   min-width: 0;
   margin: 0;
-  padding: 10px;
+  padding: 9px 10px;
 }
 
 .inventory-save,
@@ -1367,6 +1360,7 @@ nav {
 .inventory-save {
   background: #16806d;
   color: #fff;
+  min-height: 40px;
 }
 
 .inventory-cancel {

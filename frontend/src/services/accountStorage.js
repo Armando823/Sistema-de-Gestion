@@ -1,57 +1,21 @@
-const ACCOUNTS_KEY = "client-accounts";
+import {
+  clearClientSession as clearStoredSession,
+  createAccount,
+  listAccounts,
+  readClientSession as readStoredSession,
+  saveClientSession as saveStoredSession,
+} from "./dbService";
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
-const SESSION_KEY = "client-session";
 
 function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
 
-function readAccounts() {
-  try {
-    const savedAccounts = localStorage.getItem(ACCOUNTS_KEY);
-    const accounts = savedAccounts ? JSON.parse(savedAccounts) : [];
-    return Array.isArray(accounts) ? accounts : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeAccounts(accounts) {
-  try {
-    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function readClientSession() {
-  try {
-    const session = sessionStorage.getItem(SESSION_KEY);
-    return session ? JSON.parse(session)?.email || "" : "";
-  } catch {
-    return "";
-  }
-}
-
-export function saveClientSession(email) {
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ email }));
-  } catch {
-    return false;
-  }
-  return true;
-}
-
-export function clearClientSession() {
-  try {
-    sessionStorage.removeItem(SESSION_KEY);
-  } catch {
-    return false;
-  }
-  return true;
-}
+export const readClientSession = readStoredSession;
+export const saveClientSession = saveStoredSession;
+export const clearClientSession = clearStoredSession;
 
 async function hashPassword(password) {
   const encodedPassword = new TextEncoder().encode(password);
@@ -74,7 +38,7 @@ export async function registerClient(email, password) {
   const validationError = validateCredentials(normalizedEmail, password);
   if (validationError) return { error: validationError };
 
-  const accounts = readAccounts();
+  const accounts = await listAccounts();
   if (accounts.some((account) => account.email === normalizedEmail)) {
     return { error: "Ya existe una cuenta con ese correo." };
   }
@@ -84,7 +48,7 @@ export async function registerClient(email, password) {
     passwordHash: await hashPassword(password),
     createdAt: new Date().toISOString(),
   };
-  if (!writeAccounts([...accounts, account])) {
+  if (!await createAccount(account)) {
     return { error: "No se pudo guardar la cuenta en este navegador." };
   }
   return { account: { email: normalizedEmail } };
@@ -96,7 +60,7 @@ export async function authenticateClient(email, password) {
   if (validationError) return { error: "El correo o la contraseña no son válidos." };
 
   const passwordHash = await hashPassword(password);
-  const account = readAccounts().find(
+  const account = (await listAccounts()).find(
     (candidate) =>
       candidate.email === normalizedEmail &&
       candidate.passwordHash === passwordHash,
