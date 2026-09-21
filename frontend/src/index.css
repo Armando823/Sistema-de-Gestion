@@ -1585,7 +1585,8 @@ nav {
 }
 
 .client-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  min-width: 0;
 }
 
 .client-overview {
@@ -1651,6 +1652,7 @@ nav {
 }
 
 .customer-card {
+  min-width: 0;
   padding: 18px;
   display: grid;
   gap: 12px;
@@ -1661,6 +1663,7 @@ nav {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .customer-header > div {
@@ -1703,6 +1706,19 @@ nav {
   justify-content: space-between;
   gap: 10px;
   align-items: center;
+  min-width: 0;
+}
+
+.warranty-expiry span,
+.warranty-expiry strong {
+  min-width: 0;
+}
+
+.warranty-expiry strong {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .warranty-expiry strong {
@@ -1713,10 +1729,17 @@ nav {
 .customer-actions {
   display: flex;
   gap: 8px;
+  min-width: 0;
 }
 
 .customer-actions button {
   flex: 1;
+  min-width: 0;
+  padding: 9px 6px;
+  font-size: 0.78rem;
+  line-height: 1.15;
+  white-space: normal;
+  word-break: normal;
 }
 
 .customer-actions button:first-child {
@@ -3150,6 +3173,10 @@ select:focus {
   .inventory-actions button,
   .customer-actions button {
     min-width: calc(50% - 4px);
+  }
+
+  .customer-actions button:last-child:nth-child(3) {
+    flex-basis: 100%;
   }
 
   .report-controls {
