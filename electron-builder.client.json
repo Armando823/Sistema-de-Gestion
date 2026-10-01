@@ -9,7 +9,6 @@
   "files": [
     "main.js",
     "preload.js",
-    "adminAuth.js",
     "package.json",
     "frontend/dist/**/*",
     "node_modules/better-sqlite3/**/*"

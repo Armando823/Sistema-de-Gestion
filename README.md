@@ -17,7 +17,7 @@ La app se compila en dos modos, así cada PC muestra solo lo que le corresponde:
 
 | Modo | Qué muestra | Instalador |
 | --- | --- | --- |
-| `admin` | Solo el panel del jefe (abre directo en el login administrativo) | `npm run dist:admin` -> `release/admin/Taller-Digital-Admin-Setup-0.1.0.exe` |
+| `admin` | Solo el panel del jefe (abre directamente, sin contraseña) | `npm run dist:admin` -> `release/admin/Taller-Digital-Admin-Setup-0.1.0.exe` |
 | `client` | Solo el portal de clientes (sin acceso ni credenciales de administrador) | `npm run dist:client` -> `release/client/Taller-Digital-Setup-0.1.0.exe` |
 
 Para probar sin instalador: `npm run start:admin` o `npm run start:client`.
@@ -82,22 +82,21 @@ navegador para facilitar el desarrollo web.
 ## Acceso y contraseñas
 
 - **Cliente:** crea su propia cuenta con correo y contraseña.
-- **Administrador (jefe):** la primera vez que se abre la versión `admin`, la app
-  pide crear la contraseña (usuario `admin`, mínimo 8 caracteres). Se guarda
-  cifrada con scrypt y sal aleatoria en la base de datos local; no hay
-  credenciales escritas en el código ni en los instaladores.
-- Tras 5 intentos fallidos el acceso se bloquea 30 segundos.
-- Solo con `npm run dev` (navegador, sin Electron) existe un acceso de prueba
-  `admin` / `Admin123`; Vite lo elimina de todas las compilaciones de producción.
-
-**Si el jefe olvida su contraseña:** cierra la app y borra la fila
-`admin_credential` de la tabla `settings` en `taller-digital.db` (carpeta de
-datos de la app en `%APPDATA%`), por ejemplo con
-`sqlite3 taller-digital.db "DELETE FROM settings WHERE key='admin_credential';"`.
-Al abrir otra vez pedirá crear una contraseña nueva; las órdenes no se pierden.
+- **Administrador (jefe):** la versión `admin` abre directamente el panel, sin
+  solicitar usuario ni contraseña. En el modo de desarrollo combinado, el botón
+  **Entrar al panel administrativo** también abre el panel directamente.
+- **Cliente:** debe registrarse con correo y contraseña para crear y consultar
+  sus reparaciones. Las nuevas contraseñas se almacenan con PBKDF2 y sal
+  aleatoria; las cuentas anteriores con SHA-256 se actualizan al iniciar sesión.
+- La sesión de cliente se conserva solo mientras la ventana está abierta; al
+  cerrar y volver a abrir la aplicación, se solicita iniciar sesión otra vez.
 
 Esto sigue siendo autenticación local: antes de desplegar el sistema para uso
 multiusuario se necesita un backend con sesiones seguras y autorización por orden.
+Los instaladores de administrador y cliente guardan sus bases de datos localmente
+y por separado. Por eso, las solicitudes creadas en un equipo cliente no aparecen
+automáticamente en el equipo del taller; para trabajar entre equipos hace falta
+un backend compartido.
 
 ## Privacidad de las órdenes
 
@@ -112,10 +111,9 @@ códigos consecutivos.
 npm test
 ```
 
-Verifican la contraseña del administrador (hash con sal, bloqueo por intentos,
-imposibilidad de redefinir la contraseña) y las reglas de privacidad de las
-órdenes. En GitHub se ejecutan solas (con la compilación de ambas versiones) en
-cada push mediante `.github/workflows/ci.yml`.
+Verifican las reglas de privacidad de las órdenes y las utilidades de datos. En
+GitHub se ejecutan solas (con la compilación de ambas versiones) en cada push
+mediante `.github/workflows/ci.yml`.
 
 ## Uso rápido
 

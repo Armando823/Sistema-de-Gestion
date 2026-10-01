@@ -1,12 +1,8 @@
 const electronAPI = typeof window !== "undefined" ? window.electronAPI : null;
 
 function readLocal(key, fallback) {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
-  } catch {
-    return fallback;
-  }
+  const value = localStorage.getItem(key);
+  return value === null ? fallback : JSON.parse(value);
 }
 
 function writeLocal(key, value) {
@@ -23,13 +19,9 @@ export function isDesktop() {
 }
 
 export async function loadRepairs() {
-  try {
-    return electronAPI
-      ? await electronAPI.repairs.list()
-      : readLocal("repairs", []);
-  } catch {
-    return [];
-  }
+  return electronAPI
+    ? await electronAPI.repairs.list()
+    : readLocal("repairs", []);
 }
 
 export async function saveRepairs(repairs) {
@@ -43,13 +35,9 @@ export async function saveRepairs(repairs) {
 }
 
 export async function listAccounts() {
-  try {
-    return electronAPI
-      ? await electronAPI.accounts.list()
-      : readLocal("client-accounts", []);
-  } catch {
-    return [];
-  }
+  return electronAPI
+    ? await electronAPI.accounts.list()
+    : readLocal("client-accounts", []);
 }
 
 export async function createAccount(account) {
@@ -62,14 +50,20 @@ export async function createAccount(account) {
   }
 }
 
-export async function readClientSession() {
-  if (electronAPI) {
-    try {
-      return await electronAPI.session.get();
-    } catch {
-      return "";
-    }
+export async function updateAccountPassword(email, passwordHash) {
+  try {
+    if (electronAPI) return await electronAPI.accounts.updatePassword(email, passwordHash);
+    const accounts = await listAccounts();
+    const account = accounts.find((item) => item.email === email);
+    if (!account) return false;
+    account.passwordHash = passwordHash;
+    return writeLocal("client-accounts", accounts);
+  } catch {
+    return false;
   }
+}
+
+export async function readClientSession() {
   try {
     return JSON.parse(sessionStorage.getItem("client-session") || "{}")?.email || "";
   } catch {
@@ -78,13 +72,6 @@ export async function readClientSession() {
 }
 
 export async function saveClientSession(email) {
-  if (electronAPI) {
-    try {
-      return await electronAPI.session.set(email);
-    } catch {
-      return false;
-    }
-  }
   try {
     sessionStorage.setItem("client-session", JSON.stringify({ email }));
     return true;
@@ -94,13 +81,6 @@ export async function saveClientSession(email) {
 }
 
 export async function clearClientSession() {
-  if (electronAPI) {
-    try {
-      return await electronAPI.session.clear();
-    } catch {
-      return false;
-    }
-  }
   try {
     sessionStorage.removeItem("client-session");
     return true;
@@ -111,11 +91,7 @@ export async function clearClientSession() {
 
 export async function readSetting(key, fallback = null) {
   if (electronAPI) {
-    try {
-      return (await electronAPI.settings.get(key)) ?? fallback;
-    } catch {
-      return fallback;
-    }
+    return (await electronAPI.settings.get(key)) ?? fallback;
   }
   return readLocal(key, fallback);
 }
@@ -148,13 +124,9 @@ export async function deleteSetting(key) {
 }
 
 export async function loadInventory() {
-  try {
-    return electronAPI
-      ? await electronAPI.inventory.get()
-      : readLocal("workshop-inventory", []);
-  } catch {
-    return [];
-  }
+  return electronAPI
+    ? await electronAPI.inventory.get()
+    : readLocal("workshop-inventory", []);
 }
 
 export async function saveInventory(items) {

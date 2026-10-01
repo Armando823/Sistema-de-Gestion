@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SignaturePad from "./components/signature/Signaturepad";
 import ConfirmModal from "./components/modals/ConfirmModal";
 import ReceiptModal from "./components/modals/ReceiptModal";
@@ -12,7 +12,6 @@ import {
   saveClientSession,
 } from "./services/accountStorage";
 import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
-import { getAdminStatus, loginAdmin, setupAdmin } from "./services/adminAuth";
 import { toCsv } from "./utils/csv";
 import { readImage } from "./utils/image";
 import { canClientView, repairsOwnedBy } from "./utils/repairAccess";
@@ -137,72 +136,13 @@ function receiptHtml(repair) {
 }
 
 function LoginView({ onLogin, onClientLogin, onClientRegister }) {
-  const [adminLogin, setAdminLogin] = useState(!CLIENT_ENABLED);
   const [clientAccess, setClientAccess] = useState("welcome");
-  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [error, setError] = useState("");
-  const [adminConfigured, setAdminConfigured] = useState(true);
-
-  useEffect(() => {
-    if (!ADMIN_ENABLED) return undefined;
-    let active = true;
-    getAdminStatus().then((status) => {
-      if (!active) return;
-      setAdminConfigured(status.configured);
-      if (status.error) setError(status.error);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  async function submit(event) {
-    event.preventDefault();
-    const result = await loginAdmin(username, password);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setError("");
-    setPassword("");
-    onLogin("admin");
-  }
-
-  async function submitAdminSetup(event) {
-    event.preventDefault();
-    if (password !== passwordConfirmation) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
-    const created = await setupAdmin(password);
-    if (created.error) {
-      setError(created.error);
-      return;
-    }
-    const result = await loginAdmin("admin", password);
-    if (result.error) {
-      setAdminConfigured(true);
-      setError(result.error);
-      return;
-    }
-    setError("");
-    setPassword("");
-    setPasswordConfirmation("");
-    onLogin("admin");
-  }
-
-  function openAdminLogin() {
-    setAdminLogin(true);
-    setUsername("");
-    setPassword("");
-    setError("");
-  }
 
   function openClientAccess(access) {
-    setAdminLogin(false);
     setClientAccess(access);
     setEmail("");
     setPassword("");
@@ -212,12 +152,16 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
 
   async function submitClient(event) {
     event.preventDefault();
-    const result = await onClientLogin(email, password);
-    if (result.error) {
-      setError(result.error);
-      return;
+    try {
+      const result = await onClientLogin(email, password);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      setError("");
+    } catch {
+      setError("No se pudo iniciar sesión. Inténtalo de nuevo.");
     }
-    setError("");
   }
 
   async function submitRegistration(event) {
@@ -226,19 +170,23 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
       setError("Las contraseñas no coinciden.");
       return;
     }
-    const result = await onClientRegister(email, password);
-    if (result.error) {
-      setError(result.error);
-      return;
+    try {
+      const result = await onClientRegister(email, password);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      setPassword("");
+      setPasswordConfirmation("");
+      setError("Cuenta creada. Ahora puedes iniciar sesión.");
+      setClientAccess("login");
+    } catch {
+      setError("No se pudo crear la cuenta. Inténtalo de nuevo.");
     }
-    setPassword("");
-    setPasswordConfirmation("");
-    setError("Cuenta creada. Ahora puedes iniciar sesión.");
-    setClientAccess("login");
   }
 
   return (
-    <main className={`login-view ${adminLogin ? "login-admin" : "login-client"}`}>
+    <main className="login-view login-client">
       <section className="login-card">
         <div className="login-brand">
           <span className="sidebar-mark">MC</span>
@@ -248,79 +196,11 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
           </div>
         </div>
         <div className="login-heading">
-          <p className="eyebrow">{adminLogin ? "ACCESO PRIVADO" : "ACCESO PÚBLICO"}</p>
-          <h2>{adminLogin ? "Panel del jefe" : "Consulta tu reparación"}</h2>
-          <p>
-            {adminLogin
-              ? "Este acceso está reservado para la administración del taller."
-              : "Crea una cuenta para consultar y gestionar tus reparaciones."}
-          </p>
+          <p className="eyebrow">ACCESO PÚBLICO</p>
+          <h2>Consulta tu reparación</h2>
+          <p>Crea una cuenta para consultar y gestionar tus reparaciones.</p>
         </div>
-        {adminLogin && !adminConfigured ? (
-          <form className="login-form" onSubmit={submitAdminSetup}>
-            <p className="login-note">
-              Es la primera vez que se abre el panel. Crea la contraseña del jefe
-              (usuario: <strong>admin</strong>). Guárdala en un lugar seguro.
-            </p>
-            <label>
-              Nueva contraseña
-              <input
-                required
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Mínimo 8 caracteres"
-              />
-            </label>
-            <label>
-              Confirmar contraseña
-              <input
-                required
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                value={passwordConfirmation}
-                onChange={(event) => setPasswordConfirmation(event.target.value)}
-                placeholder="Repite la contraseña"
-              />
-            </label>
-            {error && <p className="form-error" role="alert">{error}</p>}
-            <button type="submit" className="primary-button">Crear contraseña y entrar</button>
-          </form>
-        ) : adminLogin ? (
-          <form className="login-form" onSubmit={submit}>
-            <label>
-              Usuario del jefe
-              <input
-                required
-                autoComplete="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="admin"
-              />
-            </label>
-            <label>
-              Contraseña
-              <input
-                required
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="********"
-              />
-            </label>
-            {error && <p className="form-error" role="alert">{error}</p>}
-            <button type="submit" className="primary-button">Entrar al panel administrativo</button>
-            {CLIENT_ENABLED && (
-              <button type="button" className="private-access" onClick={() => setAdminLogin(false)}>
-                Volver al acceso de cliente
-              </button>
-            )}
-          </form>
-        ) : clientAccess === "welcome" ? (
+        {clientAccess === "welcome" ? (
           <div className="public-access">
             <button type="button" className="primary-button" onClick={() => openClientAccess("login")}>
               Iniciar sesión como cliente
@@ -330,8 +210,8 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
             </button>
             <p>Necesitas una cuenta para crear y consultar tus reparaciones.</p>
             {ADMIN_ENABLED && CLIENT_ENABLED && (
-              <button type="button" className="private-access" onClick={openAdminLogin}>
-                Acceso administrativo
+              <button type="button" className="private-access" onClick={() => onLogin("admin")}>
+                Entrar al panel administrativo
               </button>
             )}
           </div>
@@ -354,6 +234,7 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
                 required
                 type="password"
                 minLength={8}
+                maxLength={200}
                 autoComplete={clientAccess === "register" ? "new-password" : "current-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -367,6 +248,7 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
                   required
                   type="password"
                   minLength={8}
+                  maxLength={200}
                   autoComplete="new-password"
                   value={passwordConfirmation}
                   onChange={(event) => setPasswordConfirmation(event.target.value)}
@@ -384,11 +266,7 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
           </form>
         )}
         <p className="login-note">
-          {!CLIENT_ENABLED
-            ? "Acceso exclusivo para la administración del taller."
-            : !ADMIN_ENABLED
-              ? "Usa tu cuenta personal para consultar tus reparaciones."
-              : "Los clientes usan una cuenta propia. El acceso administrativo está disponible para gestionar el taller."}
+          Usa tu cuenta personal para consultar tus reparaciones.
         </p>
       </section>
     </main>
@@ -400,6 +278,8 @@ function App({ version = "Final" }) {
   const [clientEmail, setClientEmail] = useState("");
   const [role, setRole] = useState(null);
   const [dataReady, setDataReady] = useState(false);
+  const [repairsReady, setRepairsReady] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [settings, setSettings] = useState(defaultSettings);
@@ -419,9 +299,22 @@ function App({ version = "Final" }) {
       const savedRepairs = repairsResult.status === "fulfilled" ? repairsResult.value : [];
       const sessionEmail = sessionResult.status === "fulfilled" ? sessionResult.value : "";
       const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
+      setSettingsReady(settingsResult.status === "fulfilled");
       setRepairs(savedRepairs);
+      setRepairsReady(repairsResult.status === "fulfilled");
+      if (repairsResult.status === "rejected") {
+        setNotice("No se pudieron cargar las órdenes. No se guardarán cambios para proteger los datos existentes.");
+      } else if (settingsResult.status === "rejected") {
+        setNotice("No se pudieron cargar los ajustes. No se guardarán valores predeterminados sobre los datos existentes.");
+      }
       setClientEmail(sessionEmail);
-      setRole(sessionEmail && CLIENT_ENABLED ? "client" : null);
+      setRole(
+        ADMIN_ENABLED && !CLIENT_ENABLED
+          ? "admin"
+          : sessionEmail && CLIENT_ENABLED
+            ? "client"
+            : null,
+      );
       setSettings({
         ...defaultSettings,
         ...savedSettings,
@@ -433,6 +326,8 @@ function App({ version = "Final" }) {
     }).catch(() => {
       if (cancelled) return;
       setRepairs([]);
+      setRepairsReady(false);
+      setSettingsReady(false);
       setClientEmail("");
       setRole(null);
       setSettings(defaultSettings);
@@ -444,14 +339,11 @@ function App({ version = "Final" }) {
     };
   }, []);
   useEffect(() => {
-    if (!dataReady) return;
+    if (!dataReady || !repairsReady) return;
     saveRepairs(repairs).then((saved) => {
       if (!saved) setNotice("No se pudieron guardar los cambios en la base de datos local.");
-    });
-  }, [dataReady, repairs]);
-  useEffect(() => {
-    if (dataReady) saveSetting("workshop-settings", settings);
-  }, [dataReady, settings]);
+    }).catch(() => setNotice("No se pudieron guardar los cambios en la base de datos local."));
+  }, [dataReady, repairsReady, repairs]);
   const filteredRepairs = repairs.filter((repair) =>
     [repair.id, repair.customer, repair.device].some((value) =>
       value.toLowerCase().includes(search.toLowerCase()),
@@ -459,6 +351,22 @@ function App({ version = "Final" }) {
   );
 
   if (!dataReady) return null;
+  if (!repairsReady) {
+    return (
+      <main className="login-view login-client">
+        <section className="login-card">
+          <div className="login-heading">
+            <p className="eyebrow">DATOS LOCALES</p>
+            <h2>No se pudieron cargar las órdenes</h2>
+            <p role="alert">{notice || "No se modificaron los datos existentes."}</p>
+          </div>
+          <button type="button" className="primary-button" onClick={() => window.location.reload()}>
+            Volver a intentar
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   function createRepair(formData, clearForm, clearError, noticeMessage) {
     const timestamp = new Date().toISOString();
@@ -644,8 +552,10 @@ function App({ version = "Final" }) {
   async function handleClientLogin(email, password) {
     const result = await authenticateClient(email, password);
     if (result.account) {
+      if (!await saveClientSession(result.account.email)) {
+        return { error: "No se pudo guardar la sesión. Inténtalo de nuevo." };
+      }
       setClientEmail(result.account.email);
-      await saveClientSession(result.account.email);
       setRole("client");
     }
     return result;
@@ -668,6 +578,7 @@ function App({ version = "Final" }) {
   const isAdmin = role === "admin";
 
   function logout() {
+    if (ADMIN_ENABLED && !CLIENT_ENABLED) return;
     setRole(null);
     setClientEmail("");
     clearClientSession();
@@ -760,7 +671,7 @@ function App({ version = "Final" }) {
               />
             </label>
             <span className="admin-profile"><b>AD</b> Admin</span>
-            <button type="button" className="text-button" onClick={logout}>Cerrar sesión</button>
+            {CLIENT_ENABLED && <button type="button" className="text-button" onClick={logout}>Cerrar sesión</button>}
           </div>
         )}
       </header>
@@ -778,6 +689,7 @@ function App({ version = "Final" }) {
           repairs={repairs}
           settings={settings}
           setSettings={setSettings}
+          settingsReady={settingsReady}
           filteredRepairs={filteredRepairs}
           onLogout={logout}
           updateStatus={requestStatusChange}
@@ -836,33 +748,47 @@ function AdminView({
   openReceipt,
   settings,
   setSettings,
+  settingsReady,
 }) {
   const ordersSectionRef = useRef(null);
   const [activeSection, setActiveSection] = useState("dashboard");
   const [companyLogo, setCompanyLogo] = useState("");
   const [logoReady, setLogoReady] = useState(false);
+  const [logoError, setLogoError] = useState("");
   useEffect(() => {
     readSetting("workshop-logo", "").then((savedLogo) => {
       setCompanyLogo(savedLogo || "");
       setLogoReady(true);
+    }).catch(() => {
+      setLogoError("No se pudo cargar el logo; no se sobrescribirán los datos existentes.");
     });
   }, []);
   useEffect(() => {
     if (!logoReady) return;
-    if (companyLogo) saveSetting("workshop-logo", companyLogo);
-    else deleteSetting("workshop-logo");
+    const save = companyLogo ? saveSetting("workshop-logo", companyLogo) : deleteSetting("workshop-logo");
+    save.then((saved) => {
+      if (!saved) setLogoError("No se pudieron guardar los cambios del logo.");
+      else setLogoError("");
+    }).catch(() => setLogoError("No se pudieron guardar los cambios del logo."));
   }, [companyLogo, logoReady]);
-  const inventoryFallback = [];
   const [inventoryData, setInventoryData] = useState([]);
   const [inventoryReady, setInventoryReady] = useState(false);
+  const [inventoryError, setInventoryError] = useState("");
   useEffect(() => {
     loadInventory().then((savedInventory) => {
-      setInventoryData(savedInventory.length > 0 ? savedInventory : inventoryFallback);
+      if (!Array.isArray(savedInventory)) throw new Error("La lista de inventario no es válida.");
+      setInventoryData(savedInventory);
       setInventoryReady(true);
+    }).catch(() => {
+      setInventoryError("No se pudo cargar el inventario. No se sobrescribirán los datos existentes.");
     });
   }, []);
   useEffect(() => {
-    if (inventoryReady) saveInventory(inventoryData);
+    if (!inventoryReady) return;
+    saveInventory(inventoryData).then((saved) => {
+      if (!saved) setInventoryError("No se pudieron guardar los cambios de inventario.");
+      else setInventoryError("");
+    }).catch(() => setInventoryError("No se pudieron guardar los cambios de inventario."));
   }, [inventoryData, inventoryReady]);
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("Todos");
@@ -876,7 +802,58 @@ function AdminView({
     cost: "",
     supplier: "",
   });
-  const [clientsData, setClientsData] = useState([]);
+  const [warranties, setWarranties] = useState({});
+  const [warrantiesReady, setWarrantiesReady] = useState(false);
+  const [warrantyError, setWarrantyError] = useState("");
+  useEffect(() => {
+    readSetting("workshop-warranties", {}).then((saved) => {
+      if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
+        throw new Error("Los datos de garantías no tienen un formato válido.");
+      }
+      setWarranties(saved);
+      setWarrantiesReady(true);
+    }).catch(() => setWarrantyError("No se pudieron cargar las garantías; los cambios están desactivados para proteger los datos."));
+  }, []);
+  useEffect(() => {
+    if (!warrantiesReady) return;
+    saveSetting("workshop-warranties", warranties).then((saved) => {
+      if (!saved) setWarrantyError("No se pudieron guardar los cambios de garantía.");
+      else setWarrantyError("");
+    }).catch(() => setWarrantyError("No se pudieron guardar los cambios de garantía."));
+  }, [warranties, warrantiesReady]);
+  const clientsData = useMemo(() => {
+    const clients = new Map();
+    for (const repair of repairs) {
+      const email = repair.ownerEmail?.trim().toLowerCase() || "";
+      const phoneKey = String(repair.phone || "").replace(/\D/g, "");
+      const key = email || `phone:${phoneKey || repair.id}`;
+      const existing = clients.get(key);
+      const updatedTime = repair.createdAt ? Date.parse(repair.createdAt) : 0;
+      if (!existing) {
+        clients.set(key, {
+          id: key,
+          name: repair.customer,
+          email: email || "Sin cuenta asociada",
+          phone: repair.phone,
+          device: repair.device,
+          lastService: repair.updated,
+          lastServiceTime: updatedTime,
+          tickets: repair.status === "Entregado" ? 0 : 1,
+          warrantyUntil: warranties[key] || null,
+        });
+      } else {
+        existing.tickets += repair.status === "Entregado" ? 0 : 1;
+        if (updatedTime >= existing.lastServiceTime) {
+          existing.name = repair.customer;
+          existing.phone = repair.phone;
+          existing.device = repair.device;
+          existing.lastService = repair.updated;
+          existing.lastServiceTime = updatedTime;
+        }
+      }
+    }
+    return Array.from(clients.values());
+  }, [repairs, warranties]);
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("Todos");
   const [reportPeriod, setReportPeriod] = useState("all");
@@ -913,15 +890,18 @@ function AdminView({
     if (!file) return;
     try {
       setCompanyLogo(await readImage(file, 500));
-    } catch {
-      setCompanyLogo("");
+      setLogoError("");
+    } catch (error) {
+      setLogoError(error.message);
     }
     event.target.value = "";
   }
 
   function warrantyState(date) {
     if (!date) return "Sin garantía";
-    const days = Math.ceil((new Date(`${date}T23:59:59`) - new Date()) / 86400000);
+    const expiry = new Date(`${date}T23:59:59`);
+    if (Number.isNaN(expiry.getTime())) return "Sin garantía";
+    const days = Math.ceil((expiry - new Date()) / 86400000);
     if (days < 0) return "Vencida";
     if (days <= 30) return "Por vencer";
     return "Vigente";
@@ -929,12 +909,36 @@ function AdminView({
 
   function warrantyLabel(date) {
     if (!date) return "Sin cobertura";
-    return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium" }).format(new Date(`${date}T12:00:00`));
+    const parsed = new Date(`${date}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return "Sin cobertura";
+    return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium" }).format(parsed);
   }
 
   function openClientOrders(client) {
     setSearch(client.name);
     setActiveSection("orders");
+  }
+
+  function extendClientWarranty(client) {
+    if (!warrantiesReady) return;
+    const existing = client.warrantyUntil ? new Date(`${client.warrantyUntil}T12:00:00`) : null;
+    const baseline = existing && existing > new Date() ? existing : new Date();
+    baseline.setFullYear(baseline.getFullYear() + 1);
+    const expires = [
+      baseline.getFullYear(),
+      String(baseline.getMonth() + 1).padStart(2, "0"),
+      String(baseline.getDate()).padStart(2, "0"),
+    ].join("-");
+    setWarranties((current) => ({ ...current, [client.id]: expires }));
+  }
+
+  function removeClientWarranty(client) {
+    if (!warrantiesReady) return;
+    setWarranties((current) => {
+      const next = { ...current };
+      delete next[client.id];
+      return next;
+    });
   }
 
   const filteredClients = clientsData.filter((client) => {
@@ -949,7 +953,7 @@ function AdminView({
   }));
   const reportRepairs = reportPeriod === "all"
     ? repairs
-    : repairs.filter((repair) => !repair.createdAt || new Date(repair.createdAt) >= new Date(Date.now() - Number(reportPeriod) * 86400000));
+    : repairs.filter((repair) => repair.createdAt && new Date(repair.createdAt) >= new Date(Date.now() - Number(reportPeriod) * 86400000));
   const reportStatusTotals = repairStatuses.map((status) => ({
     status,
     total: reportRepairs.filter((repair) => repair.status === status).length,
@@ -1037,7 +1041,7 @@ function AdminView({
         <div className="sidebar-mark">MC</div>
         <label className="company-logo-upload company-logo-hero" title="Cargar logo de empresa">
           {companyLogo ? <img src={companyLogo} alt={`Logo de ${settings.businessName}`} /> : <span className="sidebar-illustration" aria-hidden="true">⌁</span>}
-          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={updateCompanyLogo} />
+          <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!logoReady} onChange={updateCompanyLogo} />
           <span className="company-logo-hint">{companyLogo ? "Cambiar logo" : "Agregar logo"}</span>
         </label>
         <div className="sidebar-title">
@@ -1098,13 +1102,16 @@ function AdminView({
           </button>
         </nav>
         <div className="sidebar-footer">
-          <button type="button" className="sidebar-client-link" onClick={onLogout}>
-            Cerrar sesión
-          </button>
+          {CLIENT_ENABLED && (
+            <button type="button" className="sidebar-client-link" onClick={onLogout}>
+              Cerrar sesión
+            </button>
+          )}
           <span>Versión {version}</span>
         </div>
       </aside>
       <main className="admin-main">
+        {logoError && <p className="form-error" role="alert">{logoError}</p>}
         {(activeSection === "dashboard" || activeSection === "orders") && (
           <>
             <section className="dashboard-heading">
@@ -1172,6 +1179,7 @@ function AdminView({
               </div>
               <span className="inventory-sync">Sincronizado ahora</span>
             </div>
+            {inventoryError && <p className="form-error" role="alert">{inventoryError}</p>}
             <form className="inventory-form" onSubmit={saveInventoryItem}>
               <div className="inventory-form-title">
                 <div>
@@ -1187,7 +1195,7 @@ function AdminView({
                 <input required aria-label="Stock mínimo" type="number" min="0" value={inventoryForm.minimum} onChange={(event) => setInventoryForm({ ...inventoryForm, minimum: event.target.value })} placeholder="Mínimo" />
                 <input required aria-label="Costo unitario" type="number" min="0" value={inventoryForm.cost} onChange={(event) => setInventoryForm({ ...inventoryForm, cost: event.target.value })} placeholder="Costo" />
                 <input required value={inventoryForm.supplier} onChange={(event) => setInventoryForm({ ...inventoryForm, supplier: event.target.value })} placeholder="Proveedor" />
-                <button type="submit" className="inventory-save">{editingInventoryId ? "Guardar cambios" : "Guardar repuesto"}</button>
+                <button type="submit" className="inventory-save" disabled={!inventoryReady}>{editingInventoryId ? "Guardar cambios" : "Guardar repuesto"}</button>
               </div>
             </form>
             <div className="inventory-overview">
@@ -1234,19 +1242,20 @@ function AdminView({
                   <div className="inventory-actions">
                     <button
                       type="button"
-                      disabled={item.stock === 0}
+                      disabled={!inventoryReady || item.stock === 0}
                       onClick={() => setInventoryData((current) => current.map((entry) => entry.id === item.id ? { ...entry, stock: Math.max(entry.stock - 1, 0) } : entry))}
                     >
                       -1 salida
                     </button>
                     <button
                       type="button"
+                      disabled={!inventoryReady}
                       onClick={() => setInventoryData((current) => current.map((entry) => entry.id === item.id ? { ...entry, stock: entry.stock + 1 } : entry))}
                     >
                       +1 entrada
                     </button>
-                    <button type="button" onClick={() => editInventoryItem(item)}>Editar</button>
-                    <button type="button" className="inventory-delete" onClick={() => removeInventoryItem(item.id)}>Eliminar</button>
+                    <button type="button" disabled={!inventoryReady} onClick={() => editInventoryItem(item)}>Editar</button>
+                    <button type="button" disabled={!inventoryReady} className="inventory-delete" onClick={() => removeInventoryItem(item.id)}>Eliminar</button>
                   </div>
                 </article>
               ))}
@@ -1263,8 +1272,9 @@ function AdminView({
                 <p>Consulta clientes, equipos atendidos y vencimientos próximos.</p>
               </div>
             </div>
+            {warrantyError && <p className="form-error" role="alert">{warrantyError}</p>}
             <div className="client-overview">
-              <div><span>Clientes registrados</span><strong>{clientsData.length}</strong></div>
+              <div><span>Clientes con órdenes</span><strong>{clientsData.length}</strong></div>
               {clientWarrantyCounts.map((item) => <div key={item.status} className={`client-count client-count-${item.status.toLowerCase().replaceAll(" ", "-")}`}><span>{item.status}</span><strong>{item.total}</strong></div>)}
             </div>
             <div className="client-toolbar">
@@ -1286,8 +1296,8 @@ function AdminView({
                   <div className="warranty-expiry"><span>Garantía hasta</span><strong>{warrantyLabel(client.warrantyUntil)}</strong></div>
                   <div className="customer-actions">
                     <button type="button" onClick={() => openClientOrders(client)}>Ver órdenes</button>
-                    <button type="button" onClick={() => setClientsData((current) => current.map((entry) => entry.id === client.id ? { ...entry, warrantyUntil: `${new Date().getFullYear() + 1}-${client.warrantyUntil?.slice(5) || "12-31"}` } : entry))}>{warranty === "Vigente" ? "Extender garantía" : "Asignar garantía"}</button>
-                    {warranty !== "Sin garantía" && <button type="button" className="customer-remove-warranty" onClick={() => setClientsData((current) => current.map((entry) => entry.id === client.id ? { ...entry, warrantyUntil: null } : entry))}>Eliminar garantía</button>}
+                    <button type="button" disabled={!warrantiesReady} onClick={() => extendClientWarranty(client)}>{warranty === "Vigente" ? "Extender garantía" : "Asignar garantía"}</button>
+                    {warranty !== "Sin garantía" && <button type="button" disabled={!warrantiesReady} className="customer-remove-warranty" onClick={() => removeClientWarranty(client)}>Eliminar garantía</button>}
                   </div>
                 </article>
                 );
@@ -1351,7 +1361,15 @@ function AdminView({
         {activeSection === "settings" && (
           <form className="panel settings-panel" onSubmit={async (event) => {
             event.preventDefault();
-            setSettingsSaved(await saveSetting("workshop-settings", settings));
+            if (!settingsReady) return;
+            try {
+              const saved = await saveSetting("workshop-settings", settings);
+              setSettingsSaved(saved);
+              if (!saved) setNotice("No se pudieron guardar los ajustes del taller.");
+            } catch {
+              setSettingsSaved(false);
+              setNotice("No se pudieron guardar los ajustes del taller.");
+            }
           }}>
             <div className="panel-heading">
               <div>
@@ -1382,7 +1400,7 @@ function AdminView({
               <label><input type="checkbox" checked={settings.automaticReport} onChange={() => setSettings({ ...settings, automaticReport: !settings.automaticReport })} />Generar resumen operativo automático</label>
               <label><input type="checkbox" checked={settings.darkMode} onChange={() => setSettings({ ...settings, darkMode: !settings.darkMode })} />Modo oscuro del panel administrativo</label>
             </div>
-            <div className="settings-footer"><small>Configuración guardada localmente.</small><button type="submit" className="inventory-save">Guardar ajustes</button></div>
+            <div className="settings-footer"><small>Configuración guardada localmente.</small><button type="submit" disabled={!settingsReady} className="inventory-save">Guardar ajustes</button></div>
           </form>
         )}
       </main>

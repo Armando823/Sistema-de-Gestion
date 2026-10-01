@@ -49,6 +49,9 @@ export function isValidRepair(repair) {
     isText(repair.problem, repairLimits.problem) &&
     repairStatuses.includes(repair.status) &&
     isText(repair.updated, 40) &&
+    (repair.createdAt === undefined ||
+      (typeof repair.createdAt === "string" &&
+        Number.isFinite(Date.parse(repair.createdAt)))) &&
     (repair.ownerEmail === undefined || isValidEmail(repair.ownerEmail)) &&
     (repair.authorizedBy === undefined ||
       isText(repair.authorizedBy, repairLimits.customer)) &&

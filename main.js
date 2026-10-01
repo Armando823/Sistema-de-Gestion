@@ -1,10 +1,8 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("node:path");
 const Database = require("better-sqlite3");
-const { createAdminAuth } = require("./adminAuth");
 
 let database;
-let adminAuth;
 
 // Claves de la tabla settings reservadas al proceso principal: la interfaz no
 // puede leerlas ni modificarlas por el canal genérico de ajustes.
@@ -76,12 +74,20 @@ function getDatabase() {
       problem TEXT NOT NULL,
       status TEXT NOT NULL,
       updated TEXT NOT NULL,
+      created_at TEXT,
       owner_email TEXT,
       authorized_by TEXT,
       signature TEXT,
       photos TEXT NOT NULL DEFAULT '[]'
     );
   `);
+  database.prepare("DELETE FROM sessions WHERE id = 1").run();
+  const repairColumns = new Set(
+    database.prepare("PRAGMA table_info(repairs)").all().map((column) => column.name),
+  );
+  if (!repairColumns.has("created_at")) {
+    database.exec("ALTER TABLE repairs ADD COLUMN created_at TEXT");
+  }
   return database;
 }
 
@@ -96,6 +102,7 @@ function registerDatabaseHandlers() {
       problem: row.problem,
       status: row.status,
       updated: row.updated,
+      createdAt: row.created_at || undefined,
       ownerEmail: row.owner_email || undefined,
       authorizedBy: row.authorized_by || undefined,
       signature: row.signature || undefined,
@@ -109,14 +116,15 @@ function registerDatabaseHandlers() {
       db.prepare("DELETE FROM repairs").run();
       const insert = db.prepare(`
         INSERT INTO repairs
-          (id, customer, phone, device, problem, status, updated, owner_email, authorized_by, signature, photos)
+          (id, customer, phone, device, problem, status, updated, created_at, owner_email, authorized_by, signature, photos)
         VALUES
-          (@id, @customer, @phone, @device, @problem, @status, @updated, @ownerEmail, @authorizedBy, @signature, @photos)
+          (@id, @customer, @phone, @device, @problem, @status, @updated, @createdAt, @ownerEmail, @authorizedBy, @signature, @photos)
       `);
       for (const repair of items) {
         insert.run({
           ...repair,
           ownerEmail: repair.ownerEmail || null,
+          createdAt: repair.createdAt || null,
           authorizedBy: repair.authorizedBy || null,
           signature: repair.signature || null,
           photos: JSON.stringify(repair.photos || []),
@@ -139,23 +147,12 @@ function registerDatabaseHandlers() {
     return true;
   });
 
-  ipcMain.handle("db:session:get", () => {
-    const row = getDatabase().prepare("SELECT email FROM sessions WHERE id = 1").get();
-    return row?.email || "";
-  });
-
-  ipcMain.handle("db:session:set", (_event, email) => {
-    getDatabase().prepare(`
-      INSERT INTO sessions (id, email, updated_at)
-      VALUES (1, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET email = excluded.email, updated_at = excluded.updated_at
-    `).run(email, new Date().toISOString());
-    return true;
-  });
-
-  ipcMain.handle("db:session:clear", () => {
-    getDatabase().prepare("DELETE FROM sessions WHERE id = 1").run();
-    return true;
+  ipcMain.handle("db:accounts:update-password", (_event, email, passwordHash) => {
+    if (typeof email !== "string" || typeof passwordHash !== "string") return false;
+    const result = getDatabase()
+      .prepare("UPDATE accounts SET password_hash = ? WHERE email = ?")
+      .run(passwordHash, email);
+    return result.changes === 1;
   });
 
   ipcMain.handle("db:settings:get", (_event, key) => {
@@ -174,11 +171,6 @@ function registerDatabaseHandlers() {
     getDatabase().prepare("DELETE FROM settings WHERE key = ?").run(key);
     return true;
   });
-
-  adminAuth = createAdminAuth({ get: readSetting, set: writeSetting });
-  ipcMain.handle("admin:status", () => ({ configured: adminAuth.isConfigured() }));
-  ipcMain.handle("admin:setup", (_event, password) => adminAuth.setup(password));
-  ipcMain.handle("admin:login", (_event, username, password) => adminAuth.login(username, password));
 
   ipcMain.handle("db:inventory:get", () =>
     getDatabase().prepare("SELECT id, item, sku, category, stock, minimum, cost, supplier FROM inventory ORDER BY id").all(),

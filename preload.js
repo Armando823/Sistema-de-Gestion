@@ -8,21 +8,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   accounts: {
     list: () => ipcRenderer.invoke("db:accounts:list"),
     create: (account) => ipcRenderer.invoke("db:accounts:create", account),
-  },
-  session: {
-    get: () => ipcRenderer.invoke("db:session:get"),
-    set: (email) => ipcRenderer.invoke("db:session:set", email),
-    clear: () => ipcRenderer.invoke("db:session:clear"),
+    updatePassword: (email, passwordHash) =>
+      ipcRenderer.invoke("db:accounts:update-password", email, passwordHash),
   },
   settings: {
     get: (key) => ipcRenderer.invoke("db:settings:get", key),
     set: (key, value) => ipcRenderer.invoke("db:settings:set", key, value),
     delete: (key) => ipcRenderer.invoke("db:settings:delete", key),
-  },
-  admin: {
-    status: () => ipcRenderer.invoke("admin:status"),
-    setup: (password) => ipcRenderer.invoke("admin:setup", password),
-    login: (username, password) => ipcRenderer.invoke("admin:login", username, password),
   },
   inventory: {
     get: () => ipcRenderer.invoke("db:inventory:get"),
