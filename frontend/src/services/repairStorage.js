@@ -7,7 +7,7 @@ export async function loadRepairs() {
     const savedRepairs = await readRepairs();
     const parsedRepairs = savedRepairs.length > 0 ? savedRepairs : initialRepairs;
     return Array.isArray(parsedRepairs)
-      ? parsedRepairs.filter(isValidRepair).slice(0, 500)
+      ? parsedRepairs.filter(isValidRepair)
       : initialRepairs;
   } catch {
     return initialRepairs;
@@ -16,7 +16,10 @@ export async function loadRepairs() {
 
 export async function saveRepairs(repairs) {
   try {
-    return await writeRepairs(repairs.filter(isValidRepair).slice(0, 500));
+    // Si alguna orden no es válida no se guarda nada: antes se descartaba en
+    // silencio (y el guardado borraba esas órdenes de la base de datos).
+    if (!repairs.every(isValidRepair)) return false;
+    return await writeRepairs(repairs);
   } catch {
     return false;
   }

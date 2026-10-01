@@ -13,6 +13,7 @@ import {
 } from "./services/accountStorage";
 import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
 import { getAdminStatus, loginAdmin, setupAdmin } from "./services/adminAuth";
+import { toCsv } from "./utils/csv";
 import { readImage } from "./utils/image";
 import { canClientView, repairsOwnedBy } from "./utils/repairAccess";
 import {
@@ -546,15 +547,22 @@ function App({ version = "Final" }) {
   }
 
   function printReceipt(repair) {
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      setNotice("El navegador bloqueó la ventana de impresión.");
-      return;
-    }
-    printWindow.document.write(receiptHtml(repair));
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    // Con "noopener" window.open devuelve null y la impresión nunca se abría;
+    // se imprime desde un iframe oculto, que funciona igual en navegador y Electron.
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    frame.onload = () => {
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } catch {
+        setNotice("No se pudo abrir la ventana de impresión.");
+      }
+      setTimeout(() => frame.remove(), 60000);
+    };
+    frame.srcdoc = receiptHtml(repair);
+    document.body.appendChild(frame);
   }
 
   function exportRepairs() {
@@ -584,15 +592,27 @@ function App({ version = "Final" }) {
         ? importedData
         : importedData?.repairs;
       const validRepairs = Array.isArray(importedRepairs)
-        ? importedRepairs.filter(isValidRepair).slice(0, 500)
+        ? importedRepairs.filter(isValidRepair)
         : [];
       if (validRepairs.length === 0) {
         setNotice("El archivo no contiene órdenes válidas");
         return;
       }
-      setRepairs(validRepairs);
+      // Se agregan solo las órdenes nuevas; las que ya existen no se pisan,
+      // así importar una copia nunca borra el trabajo actual.
+      const knownIds = new Set(repairs.map((repair) => repair.id));
+      const added = [];
+      for (const repair of validRepairs) {
+        if (!knownIds.has(repair.id)) {
+          knownIds.add(repair.id);
+          added.push(repair);
+        }
+      }
+      setRepairs([...added, ...repairs]);
       setSearch("");
-      setNotice(`${validRepairs.length} orden(es) importada(s)`);
+      setNotice(
+        `${added.length} orden(es) agregada(s), ${validRepairs.length - added.length} ya existían`,
+      );
     } catch {
       setNotice("No se pudo leer el archivo de órdenes");
     } finally {
@@ -944,7 +964,7 @@ function AdminView({
       ["Orden", "Cliente", "Equipo", "Estado", "Actualización"],
       ...reportRepairs.map((repair) => [repair.id, repair.customer, repair.device, repair.status, repair.updated]),
     ];
-    const csv = rows.map((row) => row.map((value) => `"${String(value || "").replaceAll('"', '""')}"`).join(",")).join("\n");
+    const csv = toCsv(rows);
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     link.download = `reporte-reparaciones-${new Date().toISOString().slice(0, 10)}.csv`;

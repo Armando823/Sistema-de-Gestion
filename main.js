@@ -213,6 +213,9 @@ function createWindow() {
     },
   });
 
+  // La app no abre ventanas nuevas (la impresión usa un iframe interno).
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
   if (process.env.ELECTRON_START_URL) {
     window.loadURL(process.env.ELECTRON_START_URL);
   } else {
