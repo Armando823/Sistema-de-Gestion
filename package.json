@@ -16,7 +16,8 @@
     "dist:admin": "npm run build:admin && electron-builder --win nsis --config electron-builder.admin.json",
     "dist:client": "npm run build:client && electron-builder --win nsis --config electron-builder.client.json",
     "postinstall": "electron-builder install-app-deps",
-    "test": "node --test test/adminAuth.test.js test/repairAccess.test.mjs test/csv.test.mjs"
+    "test": "node --test test/adminAuth.test.js test/repairAccess.test.mjs test/csv.test.mjs test/notifier.test.js test/repairValidation.test.mjs server/test/server.test.mjs",
+    "server": "npm --prefix server start"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1"

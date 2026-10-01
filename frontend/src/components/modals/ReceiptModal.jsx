@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-export default function ReceiptModal({ repair, onClose, onPrint, onDownload }) {
+export default function ReceiptModal({ repair, onClose, onPrint, onDownload, onEmail }) {
   useEffect(() => {
     if (!repair) return undefined;
     function handleKeyDown(event) {
@@ -73,6 +73,15 @@ export default function ReceiptModal({ repair, onClose, onPrint, onDownload }) {
           >
             Descargar
           </button>
+          {onEmail && repair.contactEmail && (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onEmail(repair)}
+            >
+              Enviar por correo
+            </button>
+          )}
           <button
             type="button"
             className="primary-button"

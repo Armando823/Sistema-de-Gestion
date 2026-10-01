@@ -15,6 +15,7 @@ import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
 import { getAdminStatus, loginAdmin, setupAdmin } from "./services/adminAuth";
 import { toCsv } from "./utils/csv";
 import { readImage } from "./utils/image";
+import { sendReceiptEmail } from "./services/notifyService";
 import { canClientView, repairsOwnedBy } from "./utils/repairAccess";
 import {
   isValidRepair,
@@ -38,6 +39,7 @@ const emptyForm = {
   photos: [],
   signature: "",
   authorizedBy: "",
+  contactEmail: "",
   consent: false,
 };
 
@@ -452,6 +454,11 @@ function App({ version = "Final" }) {
   useEffect(() => {
     if (dataReady) saveSetting("workshop-settings", settings);
   }, [dataReady, settings]);
+  // El correo de la cuenta se propone en el formulario; el cliente puede cambiarlo.
+  useEffect(() => {
+    if (!clientEmail) return;
+    setClientForm((form) => (form.contactEmail ? form : { ...form, contactEmail: clientEmail }));
+  }, [clientEmail]);
   const filteredRepairs = repairs.filter((repair) =>
     [repair.id, repair.customer, repair.device].some((value) =>
       value.toLowerCase().includes(search.toLowerCase()),
@@ -470,29 +477,54 @@ function App({ version = "Final" }) {
         1000,
       ) + 1
     }`;
-    setRepairs([
-      {
-        ...formData,
-        id,
-        status: "Recibido",
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        updated: formatTimestamp(timestamp),
-      },
-      ...repairs,
-    ]);
+    const newRepair = {
+      ...formData,
+      id,
+      status: "Recibido",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      updated: formatTimestamp(timestamp),
+    };
+    setRepairs([newRepair, ...repairs]);
     clearForm();
     clearError();
-    setNotice(`${id} ${noticeMessage}`);
+    if (newRepair.contactEmail) {
+      emailReceipt(newRepair, noticeMessage);
+    } else {
+      setNotice(`${id} ${noticeMessage}`);
+    }
+  }
+
+  // Envía (o reenvía) la constancia al correo del cliente. No bloquea la
+  // creación de la orden: si el correo falla, la orden ya quedó guardada y
+  // se puede reenviar desde la constancia.
+  async function emailReceipt(repair, noticeMessage = "") {
+    const email = repair.contactEmail;
+    if (!email) {
+      setNotice(`${repair.id} no tiene un correo registrado.`);
+      return;
+    }
+    const prefix = noticeMessage ? `${repair.id} ${noticeMessage}. ` : "";
+    setNotice(`${prefix}Enviando la constancia a ${email}...`);
+    const result = await sendReceiptEmail(repair, email);
+    setNotice(
+      result.ok
+        ? `${prefix}Constancia enviada a ${email}.`
+        : `${prefix}No se pudo enviar la constancia a ${email}: ${result.message} La orden quedó guardada y podrás reenviar la constancia más tarde.`,
+    );
   }
 
   function addClientRepair(event) {
     event.preventDefault();
-    const validationError = validateRepairForm(clientForm);
+    const validationError = validateRepairForm(clientForm, { requireEmail: true });
     if (validationError) return setClientFormError(validationError);
     createRepair(
-      { ...clientForm, ownerEmail: clientEmail },
-      () => setClientForm(emptyForm),
+      {
+        ...clientForm,
+        contactEmail: clientForm.contactEmail.trim(),
+        ownerEmail: clientEmail,
+      },
+      () => setClientForm({ ...emptyForm, contactEmail: clientEmail }),
       () => setClientFormError(""),
       "enviada al taller",
     );
@@ -794,6 +826,8 @@ function App({ version = "Final" }) {
           formError={clientFormError}
           clearFormError={() => setClientFormError("")}
           addRepair={addClientRepair}
+          emptyValues={{ ...emptyForm, contactEmail: clientEmail }}
+          onEmail={emailReceipt}
         />
       )}
       {confirmation && (
@@ -818,6 +852,7 @@ function App({ version = "Final" }) {
         onClose={() => setReceipt(null)}
         onPrint={printReceipt}
         onDownload={downloadReceipt}
+        onEmail={emailReceipt}
       />
     </div>
   );
@@ -1414,6 +1449,8 @@ function RepairForm({
   subtitle = "(orden de servicio)",
   submitLabel = "Crear orden",
   deviceSuggestions = [],
+  emptyValues = emptyForm,
+  requireEmail = false,
 }) {
   const [showAllDevices, setShowAllDevices] = useState(false);
   const normalizedDevice = form.device.trim().toLowerCase();
@@ -1438,7 +1475,7 @@ function RepairForm({
             type="button"
             className="text-button"
             onClick={() => {
-              setForm(emptyForm);
+              setForm(emptyValues);
               clearFormError?.();
             }}
           >
@@ -1532,6 +1569,24 @@ function RepairForm({
           }
           placeholder="Nombre completo"
         />
+      </label>
+      <label>
+        Correo del cliente
+        <input
+          type="email"
+          required={requireEmail}
+          maxLength={254}
+          autoComplete="email"
+          value={form.contactEmail}
+          onChange={(event) =>
+            setForm({ ...form, contactEmail: event.target.value })
+          }
+          placeholder="nombre@correo.com"
+        />
+        <small className="field-help">
+          Te enviaremos la constancia con el código de tu orden, los datos del
+          equipo y cómo contactar al taller.
+        </small>
       </label>
       <label className="consent">
         <input
@@ -1679,6 +1734,8 @@ function ClientView({
   formError,
   clearFormError,
   addRepair,
+  emptyValues,
+  onEmail,
 }) {
   const [code, setCode] = useState("");
   const [lookupPhone, setLookupPhone] = useState("");
@@ -1724,6 +1781,8 @@ function ClientView({
           formError={formError}
           clearFormError={clearFormError}
           addRepair={addRepair}
+          emptyValues={emptyValues}
+          requireEmail
           title="Solicitar reparación"
           subtitle="(el taller la revisará)"
           submitLabel="Enviar solicitud"
@@ -1822,6 +1881,15 @@ function ClientView({
               </div>
             )}
             <p className="client-note">Te avisaremos cuando el estado de tu equipo cambie.</p>
+            {result.contactEmail && onEmail && (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => onEmail(result)}
+              >
+                Reenviar constancia a {result.contactEmail}
+              </button>
+            )}
           </div>
         )}
         {result === null && (

@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("node:path");
 const Database = require("better-sqlite3");
 const { createAdminAuth } = require("./adminAuth");
+const { createNotifier, loadNotifyConfig } = require("./notifier");
 
 let database;
 let adminAuth;
@@ -79,9 +80,15 @@ function getDatabase() {
       owner_email TEXT,
       authorized_by TEXT,
       signature TEXT,
-      photos TEXT NOT NULL DEFAULT '[]'
+      photos TEXT NOT NULL DEFAULT '[]',
+      contact_email TEXT
     );
   `);
+  // Bases creadas antes de existir el correo de contacto: se agrega la columna.
+  const repairColumns = database.prepare("PRAGMA table_info(repairs)").all();
+  if (!repairColumns.some((column) => column.name === "contact_email")) {
+    database.exec("ALTER TABLE repairs ADD COLUMN contact_email TEXT");
+  }
   return database;
 }
 
@@ -99,6 +106,7 @@ function registerDatabaseHandlers() {
       ownerEmail: row.owner_email || undefined,
       authorizedBy: row.authorized_by || undefined,
       signature: row.signature || undefined,
+      contactEmail: row.contact_email || undefined,
       photos: parsePhotos(row.photos),
     }));
   });
@@ -109,9 +117,9 @@ function registerDatabaseHandlers() {
       db.prepare("DELETE FROM repairs").run();
       const insert = db.prepare(`
         INSERT INTO repairs
-          (id, customer, phone, device, problem, status, updated, owner_email, authorized_by, signature, photos)
+          (id, customer, phone, device, problem, status, updated, owner_email, authorized_by, signature, photos, contact_email)
         VALUES
-          (@id, @customer, @phone, @device, @problem, @status, @updated, @ownerEmail, @authorizedBy, @signature, @photos)
+          (@id, @customer, @phone, @device, @problem, @status, @updated, @ownerEmail, @authorizedBy, @signature, @photos, @contactEmail)
       `);
       for (const repair of items) {
         insert.run({
@@ -119,6 +127,7 @@ function registerDatabaseHandlers() {
           ownerEmail: repair.ownerEmail || null,
           authorizedBy: repair.authorizedBy || null,
           signature: repair.signature || null,
+          contactEmail: repair.contactEmail || null,
           photos: JSON.stringify(repair.photos || []),
         });
       }
@@ -174,6 +183,11 @@ function registerDatabaseHandlers() {
     getDatabase().prepare("DELETE FROM settings WHERE key = ?").run(key);
     return true;
   });
+
+  const notifier = createNotifier({
+    getConfig: () => loadNotifyConfig({ userDataDir: app.getPath("userData") }),
+  });
+  ipcMain.handle("notify:receipt", (_event, payload) => notifier.sendReceipt(payload));
 
   adminAuth = createAdminAuth({ get: readSetting, set: writeSetting });
   ipcMain.handle("admin:status", () => ({ configured: adminAuth.isConfigured() }));

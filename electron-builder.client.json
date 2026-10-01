@@ -10,6 +10,7 @@
     "main.js",
     "preload.js",
     "adminAuth.js",
+    "notifier.js",
     "package.json",
     "frontend/dist/**/*",
     "node_modules/better-sqlite3/**/*"

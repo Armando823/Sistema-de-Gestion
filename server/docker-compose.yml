@@ -1,0 +1,8 @@
+services:
+  notificaciones:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    # Solo escucha en la propia máquina; nginx/Caddy publican el https.
+    ports:
+      - "127.0.0.1:3001:3001"

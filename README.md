@@ -106,6 +106,18 @@ creada por el taller (sin cuenta asociada) debe escribir el código **y** el
 teléfono registrado en la orden, así no se pueden ver órdenes ajenas probando
 códigos consecutivos.
 
+## Correo de la constancia al cliente
+
+Al enviar su solicitud, el cliente escribe su correo (se propone el de su cuenta) y
+recibe una constancia con el código de la orden, los datos del equipo, cómo
+consultarla, el contacto del taller y su firma. Si el correo falla, la orden se
+guarda igual y se puede reenviar: el cliente desde "Consulta tu reparación" y el
+administrador desde la constancia de la orden.
+
+El envío lo hace un servicio aparte, en la carpeta `server/` (la app no guarda
+contraseñas de correo). Instrucciones de instalación, configuración y despliegue en
+[`server/README.md`](server/README.md).
+
 ## Pruebas
 
 ```bash

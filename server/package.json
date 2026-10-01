@@ -1,0 +1,17 @@
+{
+  "name": "taller-digital-notificaciones",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Servicio que envía por correo la constancia de reparación al cliente",
+  "main": "src/index.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --env-file=.env src/index.js",
+    "test": "node --test test/server.test.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^7.0.0"
+  }
+}

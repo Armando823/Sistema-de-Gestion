@@ -1,4 +1,4 @@
-import { repairStatuses } from "../data/repairData";
+import { repairStatuses } from "../data/repairData.js";
 
 export const repairLimits = {
   customer: 80,
@@ -23,11 +23,11 @@ function isValidPhone(value) {
   return /^[+\d][\d\s().-]{6,29}$/.test(value.trim());
 }
 
-function isValidEmail(value) {
+export function isValidEmail(value) {
   return (
     typeof value === "string" &&
     value.length <= 254 &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+    /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]+$/.test(value)
   );
 }
 
@@ -50,6 +50,9 @@ export function isValidRepair(repair) {
     repairStatuses.includes(repair.status) &&
     isText(repair.updated, 40) &&
     (repair.ownerEmail === undefined || isValidEmail(repair.ownerEmail)) &&
+    (repair.contactEmail === undefined ||
+      repair.contactEmail === "" ||
+      isValidEmail(repair.contactEmail)) &&
     (repair.authorizedBy === undefined ||
       isText(repair.authorizedBy, repairLimits.customer)) &&
     (repair.signature === undefined ||
@@ -62,7 +65,7 @@ export function isValidRepair(repair) {
   );
 }
 
-export function validateRepairForm(form) {
+export function validateRepairForm(form, { requireEmail = false } = {}) {
   if (!isText(form.customer, repairLimits.customer))
     return "El nombre del cliente es obligatorio y debe tener hasta 80 caracteres.";
   if (!isText(form.phone, repairLimits.phone) || !isValidPhone(form.phone))
@@ -79,6 +82,11 @@ export function validateRepairForm(form) {
     return "Las fotos seleccionadas no tienen un formato válido.";
   if (!isText(form.authorizedBy, repairLimits.customer))
     return "El nombre de quien entrega la laptop es obligatorio.";
+  const contactEmail = (form.contactEmail ?? "").trim();
+  if (requireEmail && !contactEmail)
+    return "Escribe tu correo para enviarte la constancia.";
+  if (contactEmail && !isValidEmail(contactEmail))
+    return "El correo no es válido. Revisa que tenga el formato nombre@dominio.com.";
   if (form.consent !== true)
     return "Debes confirmar la autorización del cliente.";
   return "";

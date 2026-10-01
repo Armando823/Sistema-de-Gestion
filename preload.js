@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     setup: (password) => ipcRenderer.invoke("admin:setup", password),
     login: (username, password) => ipcRenderer.invoke("admin:login", username, password),
   },
+  notify: {
+    receipt: (payload) => ipcRenderer.invoke("notify:receipt", payload),
+  },
   inventory: {
     get: () => ipcRenderer.invoke("db:inventory:get"),
     save: (items) => ipcRenderer.invoke("db:inventory:save", items),
