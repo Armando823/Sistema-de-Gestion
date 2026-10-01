@@ -19,7 +19,7 @@
     "test": "node --test test/adminAuth.test.js test/repairAccess.test.mjs"
   },
   "dependencies": {
-    "better-sqlite3": "^12.4.1"
+    "better-sqlite3": "^13.0.3"
   },
   "devDependencies": {
     "electron": "^39.1.2",
