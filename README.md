@@ -99,14 +99,23 @@ Al abrir otra vez pedirá crear una contraseña nueva; las órdenes no se pierde
 Esto sigue siendo autenticación local: antes de desplegar el sistema para uso
 multiusuario se necesita un backend con sesiones seguras y autorización por orden.
 
+## Privacidad de las órdenes
+
+Un cliente solo ve las órdenes que creó con su cuenta. Para consultar una orden
+creada por el taller (sin cuenta asociada) debe escribir el código **y** el
+teléfono registrado en la orden, así no se pueden ver órdenes ajenas probando
+códigos consecutivos.
+
 ## Pruebas
 
 ```bash
 npm test
 ```
 
-Verifican el módulo de contraseña del administrador (hash con sal, bloqueo por
-intentos, imposibilidad de redefinir la contraseña).
+Verifican la contraseña del administrador (hash con sal, bloqueo por intentos,
+imposibilidad de redefinir la contraseña) y las reglas de privacidad de las
+órdenes. En GitHub se ejecutan solas (con la compilación de ambas versiones) en
+cada push mediante `.github/workflows/ci.yml`.
 
 ## Uso rápido
 

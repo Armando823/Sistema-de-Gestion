@@ -14,6 +14,7 @@ import {
 import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
 import { getAdminStatus, loginAdmin, setupAdmin } from "./services/adminAuth";
 import { readImage } from "./utils/image";
+import { canClientView, repairsOwnedBy } from "./utils/repairAccess";
 import {
   isValidRepair,
   isValidImageData,
@@ -1660,6 +1661,7 @@ function ClientView({
   addRepair,
 }) {
   const [code, setCode] = useState("");
+  const [lookupPhone, setLookupPhone] = useState("");
   const [result, setResult] = useState(null);
 
   function findRepair(event) {
@@ -1670,7 +1672,7 @@ function ClientView({
         ? repairs.find(
             (repair) =>
               repair.id === normalizedCode &&
-              (!repair.ownerEmail || repair.ownerEmail === clientEmail),
+              canClientView(repair, clientEmail, lookupPhone),
           ) || false
         : false,
     );
@@ -1687,7 +1689,7 @@ function ClientView({
   const currentStatusIndex = result ? progressStatusIndex[result.status] ?? -1 : -1;
   const deviceSuggestions = [
     ...new Set([
-      ...repairs.map((repair) => repair.device),
+      ...repairsOwnedBy(repairs, clientEmail).map((repair) => repair.device),
       ...laptopCatalog,
     ]),
   ];
@@ -1725,6 +1727,14 @@ function ClientView({
             value={code}
             onChange={(event) => setCode(event.target.value.toUpperCase())}
             placeholder="Código: REP-1001"
+          />
+          <input
+            type="tel"
+            maxLength="30"
+            aria-label="Teléfono registrado en la orden"
+            value={lookupPhone}
+            onChange={(event) => setLookupPhone(event.target.value)}
+            placeholder="Teléfono (solo si el taller creó la orden)"
           />
           <button type="submit" className="primary-button">Consultar estado</button>
         </form>
@@ -1802,7 +1812,7 @@ function ClientView({
           </div>
         )}
         {result === false && (
-          <p className="error" role="alert">No encontramos una orden con ese código. Revisa que esté escrito correctamente.</p>
+          <p className="error" role="alert">No encontramos una orden con esos datos. Revisa el código y, si el taller creó la orden, escribe también el teléfono registrado.</p>
         )}
         </div>
       </div>

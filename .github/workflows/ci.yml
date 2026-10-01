@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+      # --ignore-scripts: las pruebas no necesitan compilar better-sqlite3.
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm --prefix frontend ci
+      - name: Compilar versión administrador
+        run: npm --prefix frontend run build:admin
+      - name: Compilar versión cliente
+        run: npm --prefix frontend run build:client
+      - name: Verificar que no hay credenciales de prueba en los builds
+        run: |
+          if grep -rq "Admin123" frontend/dist; then
+            echo "Se encontró una contraseña de prueba en el build"; exit 1
+          fi
