@@ -11,6 +11,8 @@ import {
   registerClient,
   saveClientSession,
 } from "./services/accountStorage";
+import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
+import { getAdminStatus, loginAdmin, setupAdmin } from "./services/adminAuth";
 import { readImage } from "./utils/image";
 import {
   isValidRepair,
@@ -35,10 +37,6 @@ const emptyForm = {
   signature: "",
   authorizedBy: "",
   consent: false,
-};
-
-const demoUsers = {
-  admin: { username: "admin", password: "Admin123", label: "Administrador" },
 };
 
 const supportEmail = "soporte@tallerdigital.com";
@@ -137,22 +135,60 @@ function receiptHtml(repair) {
 }
 
 function LoginView({ onLogin, onClientLogin, onClientRegister }) {
-  const [adminLogin, setAdminLogin] = useState(false);
+  const [adminLogin, setAdminLogin] = useState(!CLIENT_ENABLED);
   const [clientAccess, setClientAccess] = useState("welcome");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [error, setError] = useState("");
+  const [adminConfigured, setAdminConfigured] = useState(true);
 
-  function submit(event) {
+  useEffect(() => {
+    if (!ADMIN_ENABLED) return undefined;
+    let active = true;
+    getAdminStatus().then((status) => {
+      if (!active) return;
+      setAdminConfigured(status.configured);
+      if (status.error) setError(status.error);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function submit(event) {
     event.preventDefault();
-    const user = demoUsers?.admin;
-    if (!user || username.trim().toLowerCase() !== user.username || password !== user.password) {
-      setError("El usuario o la contraseña no son correctos.");
+    const result = await loginAdmin(username, password);
+    if (result.error) {
+      setError(result.error);
       return;
     }
     setError("");
+    setPassword("");
+    onLogin("admin");
+  }
+
+  async function submitAdminSetup(event) {
+    event.preventDefault();
+    if (password !== passwordConfirmation) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
+    const created = await setupAdmin(password);
+    if (created.error) {
+      setError(created.error);
+      return;
+    }
+    const result = await loginAdmin("admin", password);
+    if (result.error) {
+      setAdminConfigured(true);
+      setError(result.error);
+      return;
+    }
+    setError("");
+    setPassword("");
+    setPasswordConfirmation("");
     onLogin("admin");
   }
 
@@ -218,7 +254,40 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
               : "Crea una cuenta para consultar y gestionar tus reparaciones."}
           </p>
         </div>
-        {adminLogin ? (
+        {adminLogin && !adminConfigured ? (
+          <form className="login-form" onSubmit={submitAdminSetup}>
+            <p className="login-note">
+              Es la primera vez que se abre el panel. Crea la contraseña del jefe
+              (usuario: <strong>admin</strong>). Guárdala en un lugar seguro.
+            </p>
+            <label>
+              Nueva contraseña
+              <input
+                required
+                type="password"
+                minLength={8}
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Mínimo 8 caracteres"
+              />
+            </label>
+            <label>
+              Confirmar contraseña
+              <input
+                required
+                type="password"
+                minLength={8}
+                autoComplete="new-password"
+                value={passwordConfirmation}
+                onChange={(event) => setPasswordConfirmation(event.target.value)}
+                placeholder="Repite la contraseña"
+              />
+            </label>
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button type="submit" className="primary-button">Crear contraseña y entrar</button>
+          </form>
+        ) : adminLogin ? (
           <form className="login-form" onSubmit={submit}>
             <label>
               Usuario del jefe
@@ -243,9 +312,11 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
             </label>
             {error && <p className="form-error" role="alert">{error}</p>}
             <button type="submit" className="primary-button">Entrar al panel administrativo</button>
-            <button type="button" className="private-access" onClick={() => setAdminLogin(false)}>
-              Volver al acceso de cliente
-            </button>
+            {CLIENT_ENABLED && (
+              <button type="button" className="private-access" onClick={() => setAdminLogin(false)}>
+                Volver al acceso de cliente
+              </button>
+            )}
           </form>
         ) : clientAccess === "welcome" ? (
           <div className="public-access">
@@ -256,7 +327,7 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
               Crear cuenta de cliente
             </button>
             <p>Necesitas una cuenta para crear y consultar tus reparaciones.</p>
-            {demoUsers && (
+            {ADMIN_ENABLED && CLIENT_ENABLED && (
               <button type="button" className="private-access" onClick={openAdminLogin}>
                 Acceso administrativo
               </button>
@@ -311,8 +382,11 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
           </form>
         )}
         <p className="login-note">
-          Los clientes usan una cuenta propia. El acceso administrativo está
-          disponible para gestionar el taller.
+          {!CLIENT_ENABLED
+            ? "Acceso exclusivo para la administración del taller."
+            : !ADMIN_ENABLED
+              ? "Usa tu cuenta personal para consultar tus reparaciones."
+              : "Los clientes usan una cuenta propia. El acceso administrativo está disponible para gestionar el taller."}
         </p>
       </section>
     </main>
@@ -345,7 +419,7 @@ function App({ version = "Final" }) {
       const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
       setRepairs(savedRepairs);
       setClientEmail(sessionEmail);
-      setRole(sessionEmail ? "client" : null);
+      setRole(sessionEmail && CLIENT_ENABLED ? "client" : null);
       setSettings({
         ...defaultSettings,
         ...savedSettings,

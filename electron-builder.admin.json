@@ -1,0 +1,31 @@
+{
+  "appId": "com.tallerdigital.gestion.admin",
+  "productName": "Taller Digital Admin",
+  "artifactName": "Taller-Digital-Admin-Setup-${version}.${ext}",
+  "asar": true,
+  "asarUnpack": [
+    "node_modules/better-sqlite3/**"
+  ],
+  "files": [
+    "main.js",
+    "preload.js",
+    "adminAuth.js",
+    "package.json",
+    "frontend/dist/**/*",
+    "node_modules/better-sqlite3/**/*"
+  ],
+  "directories": {
+    "output": "release/admin"
+  },
+  "win": {
+    "target": "nsis"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Taller Digital Admin"
+  }
+}

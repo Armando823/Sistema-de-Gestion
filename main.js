@@ -1,8 +1,30 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("node:path");
 const Database = require("better-sqlite3");
+const { createAdminAuth } = require("./adminAuth");
 
 let database;
+let adminAuth;
+
+// Claves de la tabla settings reservadas al proceso principal: la interfaz no
+// puede leerlas ni modificarlas por el canal genérico de ajustes.
+const PROTECTED_SETTING_PREFIX = "admin_";
+
+function isProtectedSetting(key) {
+  return typeof key === "string" && key.startsWith(PROTECTED_SETTING_PREFIX);
+}
+
+function readSetting(key) {
+  const row = getDatabase().prepare("SELECT value FROM settings WHERE key = ?").get(key);
+  return row ? JSON.parse(row.value) : null;
+}
+
+function writeSetting(key, value) {
+  getDatabase().prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, JSON.stringify(value));
+}
 
 function parsePhotos(value) {
   try {
@@ -137,22 +159,26 @@ function registerDatabaseHandlers() {
   });
 
   ipcMain.handle("db:settings:get", (_event, key) => {
-    const row = getDatabase().prepare("SELECT value FROM settings WHERE key = ?").get(key);
-    return row ? JSON.parse(row.value) : null;
+    if (isProtectedSetting(key)) return null;
+    return readSetting(key);
   });
 
   ipcMain.handle("db:settings:set", (_event, key, value) => {
-    getDatabase().prepare(`
-      INSERT INTO settings (key, value) VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `).run(key, JSON.stringify(value));
+    if (isProtectedSetting(key)) return false;
+    writeSetting(key, value);
     return true;
   });
 
   ipcMain.handle("db:settings:delete", (_event, key) => {
+    if (isProtectedSetting(key)) return false;
     getDatabase().prepare("DELETE FROM settings WHERE key = ?").run(key);
     return true;
   });
+
+  adminAuth = createAdminAuth({ get: readSetting, set: writeSetting });
+  ipcMain.handle("admin:status", () => ({ configured: adminAuth.isConfigured() }));
+  ipcMain.handle("admin:setup", (_event, password) => adminAuth.setup(password));
+  ipcMain.handle("admin:login", (_event, username, password) => adminAuth.login(username, password));
 
   ipcMain.handle("db:inventory:get", () =>
     getDatabase().prepare("SELECT id, item, sku, category, stock, minimum, cost, supplier FROM inventory ORDER BY id").all(),

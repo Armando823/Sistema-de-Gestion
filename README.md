@@ -11,14 +11,22 @@ npm start
 
 Esto compila el frontend y abre la aplicación de escritorio con Electron.
 
-Para generar el instalador de Windows:
+## Dos versiones: administrador y cliente
 
-```bash
-npm run dist
-```
+La app se compila en dos modos, así cada PC muestra solo lo que le corresponde:
 
-El instalador se genera en `release/Taller-Digital-Setup-0.1.0.exe`. Al
-instalarlo, la base de datos se crea automáticamente en la carpeta de datos
+| Modo | Qué muestra | Instalador |
+| --- | --- | --- |
+| `admin` | Solo el panel del jefe (abre directo en el login administrativo) | `npm run dist:admin` -> `release/admin/Taller-Digital-Admin-Setup-0.1.0.exe` |
+| `client` | Solo el portal de clientes (sin acceso ni credenciales de administrador) | `npm run dist:client` -> `release/client/Taller-Digital-Setup-0.1.0.exe` |
+
+Para probar sin instalador: `npm run start:admin` o `npm run start:client`.
+En desarrollo web: `npm run dev:admin`, `npm run dev:client` o `npm run dev`
+(este último muestra ambos, solo para desarrollo). Si un build de producción no
+indica modo, usa `client` por seguridad. El modo se define en
+`frontend/.env.admin` y `frontend/.env.client`.
+
+Al instalar, la base de datos se crea automáticamente en la carpeta de datos
 del usuario de Windows.
 
 Para ejecutar solo la versión web durante el desarrollo:
@@ -71,15 +79,34 @@ SQLite: todas las operaciones pasan por `preload.js` y canales IPC.
 Al ejecutar Vite directamente, `dbService.js` conserva un fallback en el
 navegador para facilitar el desarrollo web.
 
-## Acceso de demostración local
+## Acceso y contraseñas
 
-- Cliente: debe crear una cuenta con correo y contraseña.
-- Administrador: usuario `jefe`, contraseña `jefe123`, únicamente con `npm run dev`.
+- **Cliente:** crea su propia cuenta con correo y contraseña.
+- **Administrador (jefe):** la primera vez que se abre la versión `admin`, la app
+  pide crear la contraseña (usuario `admin`, mínimo 8 caracteres). Se guarda
+  cifrada con scrypt y sal aleatoria en la base de datos local; no hay
+  credenciales escritas en el código ni en los instaladores.
+- Tras 5 intentos fallidos el acceso se bloquea 30 segundos.
+- Solo con `npm run dev` (navegador, sin Electron) existe un acceso de prueba
+  `admin` / `Admin123`; Vite lo elimina de todas las compilaciones de producción.
 
-El acceso administrativo demo se desactiva en el build de producción para no
-publicar esas credenciales en el bundle. Esto no reemplaza autenticación real:
-antes de desplegar la aplicación se necesita un backend con sesiones seguras,
-autorización por orden y almacenamiento privado.
+**Si el jefe olvida su contraseña:** cierra la app y borra la fila
+`admin_credential` de la tabla `settings` en `taller-digital.db` (carpeta de
+datos de la app en `%APPDATA%`), por ejemplo con
+`sqlite3 taller-digital.db "DELETE FROM settings WHERE key='admin_credential';"`.
+Al abrir otra vez pedirá crear una contraseña nueva; las órdenes no se pierden.
+
+Esto sigue siendo autenticación local: antes de desplegar el sistema para uso
+multiusuario se necesita un backend con sesiones seguras y autorización por orden.
+
+## Pruebas
+
+```bash
+npm test
+```
+
+Verifican el módulo de contraseña del administrador (hash con sal, bloqueo por
+intentos, imposibilidad de redefinir la contraseña).
 
 ## Uso rápido
 

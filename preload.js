@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     set: (key, value) => ipcRenderer.invoke("db:settings:set", key, value),
     delete: (key) => ipcRenderer.invoke("db:settings:delete", key),
   },
+  admin: {
+    status: () => ipcRenderer.invoke("admin:status"),
+    setup: (password) => ipcRenderer.invoke("admin:setup", password),
+    login: (username, password) => ipcRenderer.invoke("admin:login", username, password),
+  },
   inventory: {
     get: () => ipcRenderer.invoke("db:inventory:get"),
     save: (items) => ipcRenderer.invoke("db:inventory:save", items),

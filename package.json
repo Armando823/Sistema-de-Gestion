@@ -6,11 +6,17 @@
   "description": "Sistema local de gestión de reparaciones para Taller Digital",
   "author": "Taller Digital",
   "scripts": {
-    "build": "npm --prefix frontend run build",
-    "start": "npm run build && electron .",
+    "build": "npm --prefix frontend run build:client",
+    "build:admin": "npm --prefix frontend run build:admin",
+    "build:client": "npm --prefix frontend run build:client",
+    "start": "npm run build:client && electron .",
+    "start:admin": "npm run build:admin && electron .",
+    "start:client": "npm run build:client && electron .",
     "electron": "electron .",
-    "dist": "npm run build && electron-builder --win nsis",
-    "postinstall": "electron-builder install-app-deps"
+    "dist:admin": "npm run build:admin && electron-builder --win nsis --config electron-builder.admin.json",
+    "dist:client": "npm run build:client && electron-builder --win nsis --config electron-builder.client.json",
+    "postinstall": "electron-builder install-app-deps",
+    "test": "node --test test/adminAuth.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1"
@@ -18,35 +24,5 @@
   "devDependencies": {
     "electron": "^39.1.2",
     "electron-builder": "^26.0.12"
-  },
-  "build": {
-    "appId": "com.tallerdigital.gestion",
-    "productName": "Taller Digital",
-    "artifactName": "Taller-Digital-Setup-${version}.${ext}",
-    "asar": true,
-    "asarUnpack": [
-      "node_modules/better-sqlite3/**"
-    ],
-    "files": [
-      "main.js",
-      "preload.js",
-      "package.json",
-      "frontend/dist/**/*",
-      "node_modules/better-sqlite3/**/*"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "win": {
-      "target": "nsis"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Taller Digital"
-    }
   }
 }
