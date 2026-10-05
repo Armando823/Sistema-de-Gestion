@@ -428,11 +428,15 @@ function App({ version = "Final" }) {
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [settings, setSettings] = useState(defaultSettings);
+  const repairsRef = useRef(repairs);
+  const noticeRef = useRef(notice);
   const [clientForm, setClientForm] = useState(emptyForm);
   const [clientFormError, setClientFormError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [receipt, setReceipt] = useState(null);
   const importInputRef = useRef(null);
+  repairsRef.current = repairs;
+  noticeRef.current = notice;
   useEffect(() => {
     let cancelled = false;
     function applySettings(savedSettings = {}) {
@@ -526,6 +530,45 @@ function App({ version = "Final" }) {
       if (!saved) setNotice("No se pudieron guardar los cambios en la base de datos compartida.");
     }).catch(() => setNotice("No se pudieron guardar los cambios en la base de datos compartida."));
   }, [dataReady, repairsReady, repairs, role]);
+  useEffect(() => {
+    if (!usesSharedApi() || !role || !dataReady || !repairsReady) return undefined;
+    let active = true;
+    let requestInProgress = false;
+    let syncFailed = false;
+
+    async function refreshRepairs() {
+      if (!active || requestInProgress || document.visibilityState !== "visible") return;
+      requestInProgress = true;
+      const previousRepairs = repairsRef.current;
+      try {
+        const latestRepairs = await loadRepairs();
+        if (!active || repairsRef.current !== previousRepairs) return;
+        if (JSON.stringify(latestRepairs) !== JSON.stringify(previousRepairs)) {
+          setRepairs(latestRepairs);
+        }
+        syncFailed = false;
+        if (noticeRef.current === "No se pudieron sincronizar las órdenes. Comprueba tu conexión.") {
+          setNotice("");
+        }
+      } catch {
+        if (active && !syncFailed) {
+          syncFailed = true;
+          setNotice("No se pudieron sincronizar las órdenes. Comprueba tu conexión.");
+        }
+      } finally {
+        requestInProgress = false;
+      }
+    }
+
+    refreshRepairs();
+    const intervalId = window.setInterval(refreshRepairs, 3_000);
+    document.addEventListener("visibilitychange", refreshRepairs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshRepairs);
+    };
+  }, [dataReady, repairsReady, role]);
   useEffect(() => {
     if (dataReady && settingsReady && role === "admin") {
       saveSetting("workshop-settings", settings);
