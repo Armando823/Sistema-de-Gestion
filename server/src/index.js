@@ -17,18 +17,22 @@ try {
 }
 
 const mailer = await createMailer(config, log);
-try {
-  await mailer.verify();
-  log.info("Conexión SMTP verificada.");
-} catch (error) {
-  // No se detiene: el SMTP puede recuperarse; cada envío reintenta por su cuenta.
-  log.warn(`No se pudo verificar el SMTP al arrancar: ${error?.message || error}`);
-}
-
 const server = createApp({ config, mailer, log });
-server.listen(config.port, config.host, () => {
+server.on("error", (error) => {
+  log.error(`No se pudo iniciar el servidor: ${error.message}`);
+  mailer.close();
+  process.exit(1);
+});
+server.listen(config.port, config.host, async () => {
   log.info(`Servicio de notificaciones escuchando en ${config.host}:${config.port}`);
   if (!config.apiKey) log.warn("NOTIFY_API_KEY está vacía: cualquiera que llegue al servicio puede enviar correos.");
+  try {
+    await mailer.verify();
+    log.info("Conexión SMTP verificada.");
+  } catch (error) {
+    // No se detiene: el SMTP puede recuperarse; cada envío reintenta por su cuenta.
+    log.warn(`No se pudo verificar el SMTP al arrancar: ${error?.message || error}`);
+  }
 });
 
 function shutdown(signal) {

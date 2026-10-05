@@ -6,6 +6,15 @@ function toInt(value, fallback) {
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
+function toPort(value, fallback) {
+  if (value === undefined || value === "") return fallback;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error("PORT debe ser un número entero entre 1 y 65535.");
+  }
+  return port;
+}
+
 function toBool(value, fallback = false) {
   if (value === undefined || value === "") return fallback;
   return ["1", "true", "yes", "si", "sí"].includes(String(value).toLowerCase());
@@ -18,7 +27,7 @@ export function loadConfig(env = process.env) {
   const config = {
     production,
     host: env.HOST || "0.0.0.0",
-    port: toInt(env.PORT, 3001),
+    port: toPort(env.PORT, 3001),
     apiKey: env.NOTIFY_API_KEY || "",
     trustProxy: toBool(env.TRUST_PROXY),
     allowedOrigins: (env.ALLOWED_ORIGINS || "")

@@ -55,6 +55,13 @@ test("config: en producción exige API key y SMTP", () => {
   assert.doesNotThrow(() => loadConfig({ MAIL_FROM: "a@b.co", SMTP_HOST: "smtp.b.co" }));
 });
 
+test("config: usa el puerto del entorno y valida su rango", () => {
+  assert.equal(loadConfig({ PORT: "10000", MAIL_DRY_RUN: "true" }).port, 10000);
+  assert.equal(loadConfig({ MAIL_DRY_RUN: "true" }).port, 3001);
+  assert.throws(() => loadConfig({ PORT: "10000abc", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
+  assert.throws(() => loadConfig({ PORT: "65536", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
+});
+
 test("la validación acepta una orden correcta y rechaza datos malos", () => {
   assert.equal(parseReceiptRequest(goodBody).ok, true);
   assert.equal(parseReceiptRequest({ ...goodBody, email: "no-es-correo" }).ok, false);

@@ -77,8 +77,19 @@ npm i -g pm2
 pm2 start ecosystem.config.cjs && pm2 save && pm2 startup
 ```
 
-En ambos casos el servicio escucha en el puerto 3001 y **debe ir detrás de https**
-(la clave viaja en cada petición). Ejemplo con nginx:
+**Opción C: Render**
+
+1. Crea un Web Service conectado al repositorio y establece `server` como **Root Directory**.
+2. Usa `npm install` como **Build Command** y `npm start` como **Start Command**.
+3. Configura las variables necesarias en Render, como `NODE_ENV=production`,
+   `NOTIFY_API_KEY`, `MAIL_FROM`, `SMTP_HOST` y las credenciales SMTP.
+
+Render proporciona `PORT` automáticamente. El servicio lo utiliza y escucha en
+`0.0.0.0`; no definas `PORT` manualmente. Configura `/health` como **Health Check Path**.
+
+En Docker y PM2, si no se configura `PORT`, el servicio usa el puerto 3001. En
+todos los casos el servicio debe ir detrás de https (la clave viaja en cada
+petición). Ejemplo con nginx:
 
 ```nginx
 server {
