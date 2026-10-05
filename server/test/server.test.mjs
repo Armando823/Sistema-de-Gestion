@@ -139,6 +139,29 @@ test("API web: registro público crea clientes, el login emite sesión y protege
   }
 });
 
+test("el límite de acceso se mantiene sin mostrar el número de intentos", async () => {
+  const app = await start({
+    database: { async getAccount() { return null; } },
+  });
+  try {
+    let response;
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      response = await fetch(`${app.url}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "admin@taller.com", password: "WrongPassword123" }),
+      });
+    }
+    assert.equal(response.status, 429);
+    assert.ok(response.headers.get("retry-after"));
+    const payload = await response.json();
+    assert.equal(payload.error, "No se pudo completar el acceso. Inténtalo de nuevo más tarde.");
+    assert.doesNotMatch(payload.error, /intento[s]?/i);
+  } finally {
+    await app.close();
+  }
+});
+
 test("la validación acepta una orden correcta y rechaza datos malos", () => {
   assert.equal(parseReceiptRequest(goodBody).ok, true);
   assert.equal(parseReceiptRequest({ ...goodBody, email: "no-es-correo" }).ok, false);

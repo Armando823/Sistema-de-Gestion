@@ -147,7 +147,7 @@ export function createApp({ config, mailer, database, log = console, now = Date.
   function takeAuthLimit(req) {
     const result = authLimiter.take(clientIp(req));
     if (!result.allowed) {
-      throw new HttpError(429, "Demasiados intentos. Espera antes de volver a intentarlo.", {
+      throw new HttpError(429, "No se pudo completar el acceso. Inténtalo de nuevo más tarde.", {
         "Retry-After": String(result.retryAfterSec),
       });
     }
