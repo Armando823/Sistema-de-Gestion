@@ -81,7 +81,6 @@ navegador para facilitar el desarrollo web.
 
 ## Acceso y contraseñas
 
-- **Cliente:** crea su propia cuenta con correo y contraseña.
 - **Administrador (jefe):** la primera vez que se abre la versión `admin`, la app
   pide crear la contraseña (usuario `admin`, mínimo 8 caracteres). Se guarda
   cifrada con scrypt y sal aleatoria en la base de datos local; no hay
@@ -96,8 +95,20 @@ datos de la app en `%APPDATA%`), por ejemplo con
 `sqlite3 taller-digital.db "DELETE FROM settings WHERE key='admin_credential';"`.
 Al abrir otra vez pedirá crear una contraseña nueva; las órdenes no se pierden.
 
-Esto sigue siendo autenticación local: antes de desplegar el sistema para uso
-multiusuario se necesita un backend con sesiones seguras y autorización por orden.
+- **Cliente:** debe registrarse con correo y contraseña para crear y consultar
+  sus reparaciones. Las nuevas contraseñas se almacenan con PBKDF2 y sal
+  aleatoria; las cuentas anteriores con SHA-256 se actualizan al iniciar sesión.
+- La sesión de cliente se conserva solo mientras la ventana está abierta; al
+  cerrar y volver a abrir la aplicación, se solicita iniciar sesión otra vez.
+
+La autenticación y los datos son locales a cada instalación: los instaladores de
+administrador y cliente guardan sus bases de datos por separado, y las solicitudes
+no se sincronizan automáticamente entre equipos. Para trabajar entre equipos o
+dar servicio a varios usuarios hace falta un backend compartido con sesiones
+seguras y autorización por orden.
+
+Consulta [`SECURITY.md`](SECURITY.md) para las limitaciones de seguridad y cómo
+reportar una vulnerabilidad.
 
 ## Privacidad de las órdenes
 
@@ -139,4 +150,7 @@ cada push mediante `.github/workflows/ci.yml`.
 6. Desde el panel del administrador puedes cambiar el estado y agregar las fotos de recepción.
 7. El cliente puede consultar sus órdenes con el código generado.
 
-Los datos se conservan únicamente en el navegador actual. Borrar los datos del sitio elimina las órdenes guardadas.
+En el modo web de desarrollo, los datos se guardan en el `localStorage` del
+navegador actual. La aplicación de escritorio Electron usa SQLite local en la
+carpeta de datos del usuario. Ninguno de los dos modos sincroniza información con
+otros equipos; borrar los datos del sitio elimina los datos web guardados.
