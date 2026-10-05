@@ -5,7 +5,9 @@ const { Pool } = pg;
 export function createDatabase(connectionString) {
   const pool = new Pool({
     connectionString,
-    ssl: process.env.NODE_ENV === "production" ? true : undefined,
+    ssl: process.env.NODE_ENV === "production"
+      ? { rejectUnauthorized: false }
+      : undefined,
     max: 5,
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 30_000,
