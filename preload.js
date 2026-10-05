@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   accounts: {
     list: () => ipcRenderer.invoke("db:accounts:list"),
     create: (account) => ipcRenderer.invoke("db:accounts:create", account),
+    updatePassword: (email, passwordHash) =>
+      ipcRenderer.invoke("db:accounts:update-password", email, passwordHash),
   },
   session: {
     get: () => ipcRenderer.invoke("db:session:get"),

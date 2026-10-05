@@ -12,19 +12,18 @@ confiables.
 
 ## Alcance y limitaciones
 
-La aplicación de escritorio guarda órdenes y cuentas localmente en SQLite; la
-versión web de desarrollo usa `localStorage`. El administrador y los clientes
-inician sesión localmente, pero las cuentas y órdenes no se sincronizan entre
-instalaciones. Las contraseñas del administrador se protegen con scrypt y sal
-aleatoria; las de clientes, con PBKDF2 y sal aleatoria. Esto no proporciona
-autenticación centralizada ni autorización para un servicio multiusuario. El
-acceso de prueba del administrador solo existe en el servidor de desarrollo web
-y no se incluye en las compilaciones de producción.
+La aplicación de escritorio conserva órdenes y cuentas en SQLite local. La web
+desplegada puede usar la API Node y PostgreSQL compartidos, con sesiones firmadas
+y autorización por rol y propiedad de las órdenes; el modo de desarrollo sin
+`VITE_API_URL` sigue usando `localStorage`. Electron no sincroniza ni migra datos
+a PostgreSQL. Las contraseñas locales de cliente usan PBKDF2 y sal aleatoria; el
+servidor web usa scrypt y sal aleatoria.
 
-No guardes información sensible ni uses esta aplicación como sistema
-multiusuario en producción. Para ese uso se necesita un backend con autenticación,
-autorización y almacenamiento compartido. Consulta el README para más detalles
-sobre el estado actual y las limitaciones.
+El despliegue web y sus controles aún requieren validación operativa antes de
+usarse con datos reales. Protege las variables del servidor, configura
+`ALLOWED_ORIGINS` y usa PostgreSQL administrado con TLS. No publiques claves,
+contraseñas ni tokens en el repositorio. Consulta el README y `server/README.md`
+para las limitaciones y configuración.
 
 ## Reportar una vulnerabilidad
 

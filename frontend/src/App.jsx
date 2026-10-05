@@ -6,11 +6,20 @@ import { repairStatuses } from "./data/repairData";
 import { loadRepairs, saveRepairs } from "./services/repairStorage";
 import {
   authenticateClient,
+  authenticateAdmin,
   clearClientSession,
   readClientSession,
   registerClient,
   saveClientSession,
 } from "./services/accountStorage";
+import {
+  deleteSharedRepair,
+  isDesktop,
+  lookupSharedRepair,
+  nextSharedRepairId,
+  restoreSharedSession,
+  usesSharedApi,
+} from "./services/dbService";
 import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
 import { getAdminStatus, loginAdmin, setupAdmin } from "./services/adminAuth";
 import { toCsv } from "./utils/csv";
@@ -138,7 +147,7 @@ function receiptHtml(repair) {
   return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd>${repair.authorizedBy ? `<dt>Recibido por</dt><dd>${escapeHtml(repair.authorizedBy)}</dd>` : ""}</dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${signatureMarkup}</body></html>`;
 }
 
-function LoginView({ onLogin, onClientLogin, onClientRegister }) {
+function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin }) {
   const [adminLogin, setAdminLogin] = useState(!CLIENT_ENABLED);
   const [clientAccess, setClientAccess] = useState("welcome");
   const [username, setUsername] = useState("");
@@ -149,7 +158,7 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
   const [adminConfigured, setAdminConfigured] = useState(true);
 
   useEffect(() => {
-    if (!ADMIN_ENABLED) return undefined;
+    if (!ADMIN_ENABLED || onAdminLogin) return undefined;
     let active = true;
     getAdminStatus().then((status) => {
       if (!active) return;
@@ -171,6 +180,17 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
     setError("");
     setPassword("");
     onLogin("admin");
+  }
+
+  async function submitSharedAdmin(event) {
+    event.preventDefault();
+    const result = await onAdminLogin(email, password);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setError("");
+    setPassword("");
   }
 
   async function submitAdminSetup(event) {
@@ -292,15 +312,16 @@ function LoginView({ onLogin, onClientLogin, onClientRegister }) {
             <button type="submit" className="primary-button">Crear contraseña y entrar</button>
           </form>
         ) : adminLogin ? (
-          <form className="login-form" onSubmit={submit}>
+          <form className="login-form" onSubmit={onAdminLogin ? submitSharedAdmin : submit}>
             <label>
-              Usuario del jefe
+              {onAdminLogin ? "Correo del administrador" : "Usuario del jefe"}
               <input
                 required
-                autoComplete="username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="admin"
+                type={onAdminLogin ? "email" : "text"}
+                autoComplete={onAdminLogin ? "email" : "username"}
+                value={onAdminLogin ? email : username}
+                onChange={(event) => onAdminLogin ? setEmail(event.target.value) : setUsername(event.target.value)}
+                placeholder={onAdminLogin ? "admin@correo.com" : "admin"}
               />
             </label>
             <label>
@@ -402,6 +423,8 @@ function App({ version = "Final" }) {
   const [clientEmail, setClientEmail] = useState("");
   const [role, setRole] = useState(null);
   const [dataReady, setDataReady] = useState(false);
+  const [repairsReady, setRepairsReady] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [settings, setSettings] = useState(defaultSettings);
@@ -412,18 +435,7 @@ function App({ version = "Final" }) {
   const importInputRef = useRef(null);
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([
-      loadRepairs(),
-      readClientSession(),
-      readSetting("workshop-settings", {}),
-    ]).then(([repairsResult, sessionResult, settingsResult]) => {
-      if (cancelled) return;
-      const savedRepairs = repairsResult.status === "fulfilled" ? repairsResult.value : [];
-      const sessionEmail = sessionResult.status === "fulfilled" ? sessionResult.value : "";
-      const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
-      setRepairs(savedRepairs);
-      setClientEmail(sessionEmail);
-      setRole(sessionEmail && CLIENT_ENABLED ? "client" : null);
+    function applySettings(savedSettings = {}) {
       setSettings({
         ...defaultSettings,
         ...savedSettings,
@@ -431,10 +443,73 @@ function App({ version = "Final" }) {
           ? defaultSettings.currency
           : savedSettings.currency || defaultSettings.currency,
       });
+    }
+    async function loadAccount(account) {
+      const [repairsResult, settingsResult] = await Promise.allSettled([
+        loadRepairs(),
+        readSetting("workshop-settings", {}),
+      ]);
+      if (cancelled) return;
+      const savedRepairs = repairsResult.status === "fulfilled" ? repairsResult.value : [];
+      const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
+      setRepairs(savedRepairs);
+      setRepairsReady(repairsResult.status === "fulfilled");
+      setSettingsReady(settingsResult.status === "fulfilled");
+      if (repairsResult.status === "rejected") {
+        setNotice("No se pudieron cargar las órdenes compartidas.");
+      } else if (settingsResult.status === "rejected") {
+        setNotice("No se pudieron cargar los ajustes del taller.");
+      }
+      setClientEmail(account.email);
+      setRole(account.role);
+      applySettings(savedSettings);
       setDataReady(true);
-    }).catch(() => {
+    }
+    async function initialize() {
+      if (usesSharedApi()) {
+        const account = await restoreSharedSession();
+        if (account) await loadAccount(account);
+        else if (!cancelled) {
+          setRepairs([]);
+          setRepairsReady(true);
+          setSettingsReady(true);
+          setDataReady(true);
+        }
+        return;
+      }
+      const [repairsResult, sessionResult, settingsResult] = await Promise.allSettled([
+        loadRepairs(),
+        readClientSession(),
+        readSetting("workshop-settings", {}),
+      ]);
+      if (cancelled) return;
+      const savedRepairs = repairsResult.status === "fulfilled" ? repairsResult.value : [];
+      const sessionEmail = sessionResult.status === "fulfilled" ? sessionResult.value : "";
+      const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
+      setRepairs(savedRepairs);
+      setRepairsReady(repairsResult.status === "fulfilled");
+      setSettingsReady(settingsResult.status === "fulfilled");
+      if (repairsResult.status === "rejected") {
+        setNotice("No se pudieron cargar las órdenes. No se guardarán cambios para proteger los datos existentes.");
+      } else if (settingsResult.status === "rejected") {
+        setNotice("No se pudieron cargar los ajustes para proteger los datos existentes.");
+      }
+      setClientEmail(sessionEmail);
+      setRole(
+        isDesktop() && ADMIN_ENABLED && !CLIENT_ENABLED
+          ? "admin"
+          : sessionEmail && CLIENT_ENABLED
+            ? "client"
+            : null,
+      );
+      applySettings(savedSettings);
+      setDataReady(true);
+    }
+    initialize().catch(() => {
       if (cancelled) return;
       setRepairs([]);
+      setRepairsReady(false);
+      setSettingsReady(false);
       setClientEmail("");
       setRole(null);
       setSettings(defaultSettings);
@@ -446,14 +521,16 @@ function App({ version = "Final" }) {
     };
   }, []);
   useEffect(() => {
-    if (!dataReady) return;
+    if ((usesSharedApi() && !role) || !dataReady || !repairsReady) return;
     saveRepairs(repairs).then((saved) => {
-      if (!saved) setNotice("No se pudieron guardar los cambios en la base de datos local.");
-    });
-  }, [dataReady, repairs]);
+      if (!saved) setNotice("No se pudieron guardar los cambios en la base de datos compartida.");
+    }).catch(() => setNotice("No se pudieron guardar los cambios en la base de datos compartida."));
+  }, [dataReady, repairsReady, repairs, role]);
   useEffect(() => {
-    if (dataReady) saveSetting("workshop-settings", settings);
-  }, [dataReady, settings]);
+    if (dataReady && settingsReady && role === "admin") {
+      saveSetting("workshop-settings", settings);
+    }
+  }, [dataReady, settingsReady, settings, role]);
   // El correo de la cuenta se propone en el formulario; el cliente puede cambiarlo.
   useEffect(() => {
     if (!clientEmail) return;
@@ -467,16 +544,24 @@ function App({ version = "Final" }) {
 
   if (!dataReady) return null;
 
-  function createRepair(formData, clearForm, clearError, noticeMessage) {
+  async function createRepair(formData, clearForm, clearError, noticeMessage) {
     const timestamp = new Date().toISOString();
-    const id = `REP-${
-      Math.max(
-        ...repairs.map(
-          (repair) => Number(repair.id.replace("REP-", "")) || 1000,
-        ),
-        1000,
-      ) + 1
-    }`;
+    let id;
+    try {
+      id = usesSharedApi()
+        ? await nextSharedRepairId()
+        : `REP-${
+            Math.max(
+              ...repairs.map(
+                (repair) => Number(repair.id.replace("REP-", "")) || 1000,
+              ),
+              1000,
+            ) + 1
+          }`;
+    } catch (error) {
+      setNotice(error.message || "No se pudo reservar un código de reparación.");
+      return;
+    }
     const newRepair = {
       ...formData,
       id,
@@ -514,11 +599,11 @@ function App({ version = "Final" }) {
     );
   }
 
-  function addClientRepair(event) {
+  async function addClientRepair(event) {
     event.preventDefault();
     const validationError = validateRepairForm(clientForm, { requireEmail: true });
     if (validationError) return setClientFormError(validationError);
-    createRepair(
+    await createRepair(
       {
         ...clientForm,
         contactEmail: clientForm.contactEmail.trim(),
@@ -541,7 +626,7 @@ function App({ version = "Final" }) {
     setConfirmation({ type: "delete", id });
   }
 
-  function confirmAction() {
+  async function confirmAction() {
     if (confirmation?.type === "status") {
       setRepairs((current) =>
         current.map((repair) =>
@@ -558,6 +643,15 @@ function App({ version = "Final" }) {
       setNotice(`${confirmation.id} actualizada`);
     }
     if (confirmation?.type === "delete") {
+      if (usesSharedApi()) {
+        try {
+          await deleteSharedRepair(confirmation.id);
+        } catch (error) {
+          setNotice(error.message || "No se pudo eliminar la orden.");
+          setConfirmation(null);
+          return;
+        }
+      }
       setRepairs((current) =>
         current.filter((repair) => repair.id !== confirmation.id),
       );
@@ -677,10 +771,50 @@ function App({ version = "Final" }) {
     const result = await authenticateClient(email, password);
     if (result.account) {
       setClientEmail(result.account.email);
-      await saveClientSession(result.account.email);
-      setRole("client");
+      if (!await saveClientSession(result.account.email)) {
+        return { error: "No se pudo guardar la sesión. Inténtalo de nuevo." };
+      }
+      if (usesSharedApi()) {
+        try {
+          const [savedRepairs, savedSettings] = await Promise.all([
+            loadRepairs(),
+            readSetting("workshop-settings", {}),
+          ]);
+          setRepairs(savedRepairs);
+          setRepairsReady(true);
+          setSettingsReady(true);
+          setSettings({ ...defaultSettings, ...savedSettings });
+        } catch (error) {
+          return { error: error.message || "No se pudieron cargar los datos compartidos." };
+        }
+      }
+      setRole(result.account.role || "client");
     }
     return result;
+  }
+
+  async function handleAdminLogin(email, password) {
+    if (!usesSharedApi()) {
+      return { error: "El acceso web no está configurado." };
+    }
+    const result = await authenticateAdmin(email, password);
+    if (!result.account) return result;
+    try {
+      const [savedRepairs, savedSettings] = await Promise.all([
+        loadRepairs(),
+        readSetting("workshop-settings", {}),
+      ]);
+      setRepairs(savedRepairs);
+      setRepairsReady(true);
+      setSettingsReady(true);
+      setSettings({ ...defaultSettings, ...savedSettings });
+      setClientEmail(result.account.email);
+      setRole("admin");
+      return result;
+    } catch (error) {
+      await clearClientSession();
+      return { error: error.message || "No se pudieron cargar los datos compartidos." };
+    }
   }
 
   function handleClientRegister(email, password) {
@@ -693,6 +827,7 @@ function App({ version = "Final" }) {
         onLogin={setRole}
         onClientLogin={handleClientLogin}
         onClientRegister={handleClientRegister}
+        onAdminLogin={usesSharedApi() ? handleAdminLogin : undefined}
       />
     );
   }
@@ -1741,18 +1876,31 @@ function ClientView({
   const [lookupPhone, setLookupPhone] = useState("");
   const [result, setResult] = useState(null);
 
-  function findRepair(event) {
+  async function findRepair(event) {
     event.preventDefault();
     const normalizedCode = code.trim().toUpperCase();
-    setResult(
-      /^REP-\d{4,8}$/.test(normalizedCode)
-        ? repairs.find(
-            (repair) =>
-              repair.id === normalizedCode &&
-              canClientView(repair, clientEmail, lookupPhone),
-          ) || false
-        : false,
+    if (!/^REP-\d{4,8}$/.test(normalizedCode)) {
+      setResult(false);
+      return;
+    }
+    const ownedRepair = repairs.find(
+      (repair) =>
+        repair.id === normalizedCode &&
+        canClientView(repair, clientEmail, lookupPhone),
     );
+    if (ownedRepair) {
+      setResult(ownedRepair);
+      return;
+    }
+    if (usesSharedApi() && lookupPhone.trim()) {
+      try {
+        setResult((await lookupSharedRepair(normalizedCode, lookupPhone)) || false);
+      } catch {
+        setResult(false);
+      }
+      return;
+    }
+    setResult(false);
   }
 
   const progressStatusIndex = {

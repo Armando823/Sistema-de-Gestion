@@ -29,6 +29,10 @@ export function loadConfig(env = process.env) {
     host: env.HOST || "0.0.0.0",
     port: toPort(env.PORT, 3001),
     apiKey: env.NOTIFY_API_KEY || "",
+    databaseUrl: env.DATABASE_URL || "",
+    sessionSecret: env.SESSION_SECRET || "",
+    adminEmail: env.ADMIN_EMAIL || "",
+    adminPassword: env.ADMIN_PASSWORD || "",
     trustProxy: toBool(env.TRUST_PROXY),
     allowedOrigins: (env.ALLOWED_ORIGINS || "")
       .split(",")

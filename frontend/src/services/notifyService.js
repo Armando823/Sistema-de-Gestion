@@ -3,8 +3,9 @@
 //    Electron (preload -> notify.receipt), que conoce la URL y la clave del
 //    servidor de notificaciones (ver server/README.md).
 //  - En desarrollo web (npm run dev) usa VITE_NOTIFY_URL si está definida.
-const electronAPI = typeof window !== "undefined" ? window.electronAPI : null;
+import { sendSharedNotification, usesSharedApi } from "./dbService";
 
+const electronAPI = typeof window !== "undefined" ? window.electronAPI : null;
 const NOT_CONFIGURED = {
   ok: false,
   code: "not_configured",
@@ -32,10 +33,14 @@ export async function sendReceiptEmail(repair, email) {
   const payload = buildReceiptPayload(repair, email);
   try {
     if (electronAPI?.notify) return await electronAPI.notify.receipt(payload);
+    if (usesSharedApi()) {
+      const result = await sendSharedNotification(payload);
+      return result.ok ? { ok: true } : NOT_CONFIGURED;
+    }
 
-    const baseUrl = String(import.meta.env.VITE_NOTIFY_URL || "").replace(/\/+$/, "");
+    const baseUrl = String(import.meta.env?.VITE_NOTIFY_URL || "").replace(/\/+$/, "");
     if (!baseUrl) return NOT_CONFIGURED;
-    const apiKey = import.meta.env.VITE_NOTIFY_API_KEY; // solo para desarrollo
+    const apiKey = import.meta.env?.VITE_NOTIFY_API_KEY; // solo para desarrollo
     const response = await fetch(`${baseUrl}/api/notifications/receipt`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(apiKey ? { "X-Api-Key": apiKey } : {}) },

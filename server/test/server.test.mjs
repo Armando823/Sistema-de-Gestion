@@ -5,6 +5,7 @@ import { createApp } from "../src/app.js";
 import { sendWithRetry } from "../src/mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "../src/receiptEmail.js";
 import { createRateLimiter } from "../src/rateLimiter.js";
+import { createSessionToken, hashPassword } from "../src/auth.js";
 
 // PNG mínimo válido de 1x1.
 const PNG =
@@ -27,15 +28,16 @@ const silent = { info() {}, warn() {}, error() {} };
 function makeConfig(extra = {}) {
   return {
     ...loadConfig({ MAIL_DRY_RUN: "true", NOTIFY_API_KEY: "clave-de-prueba-123456" }),
+    sessionSecret: "session-secret-for-tests-at-least-32-bytes",
     business: { name: "Taller Digital", phone: "+57 300 000 0000", email: "soporte@taller.com", address: "Calle 1", hours: "L-S 8-6", responseTime: "24 horas" },
     ...extra,
   };
 }
 
-async function start({ config = makeConfig(), mailer } = {}) {
+async function start({ config = makeConfig(), mailer, database } = {}) {
   const sent = [];
   const fake = mailer || { async send(message) { sent.push(message); return {}; } };
-  const server = createApp({ config, mailer: fake, log: silent, sleep: async () => {} });
+  const server = createApp({ config, mailer: fake, database, log: silent, sleep: async () => {} });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   return { url, sent, close: () => new Promise((resolve) => server.close(resolve)) };
@@ -60,6 +62,81 @@ test("config: usa el puerto del entorno y valida su rango", () => {
   assert.equal(loadConfig({ MAIL_DRY_RUN: "true" }).port, 3001);
   assert.throws(() => loadConfig({ PORT: "10000abc", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
   assert.throws(() => loadConfig({ PORT: "65536", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
+});
+
+test("API web: registro público crea clientes, el login emite sesión y protege recursos", async () => {
+  const accounts = new Map();
+  let nextRepairNumber = 1000;
+  accounts.set("admin@taller.com", {
+    email: "admin@taller.com",
+    passwordHash: await hashPassword("ContraseñaAdmin123"),
+    role: "admin",
+  });
+  const database = {
+    async createAccount(email, passwordHash) {
+      if (accounts.has(email)) throw Object.assign(new Error("duplicate"), { code: "23505" });
+      accounts.set(email, { email, passwordHash, role: "client" });
+    },
+    async getAccount(email) { return accounts.get(email) || null; },
+    async listRepairs() { return []; },
+    async nextRepairId() {
+      nextRepairNumber += 1;
+      return `REP-${String(nextRepairNumber).padStart(4, "0")}`;
+    },
+    async getSetting() { return { businessName: "Taller" }; },
+  };
+  const app = await start({ database });
+  try {
+    const register = await fetch(`${app.url}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "cliente@correo.com", password: "Contraseña123" }),
+    });
+    assert.equal(register.status, 201);
+    assert.deepEqual(await register.json(), {
+      account: { email: "cliente@correo.com", role: "client" },
+    });
+    assert.match(accounts.get("cliente@correo.com").passwordHash, /^scrypt\$/);
+
+    const login = await fetch(`${app.url}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "CLIENTE@correo.com", password: "Contraseña123" }),
+    });
+    assert.equal(login.status, 200);
+    const { token, account } = await login.json();
+    assert.equal(account.role, "client");
+    assert.equal((await fetch(`${app.url}/api/repairs`)).status, 401);
+    const repairs = await fetch(`${app.url}/api/repairs`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(repairs.status, 200);
+    assert.equal((await fetch(`${app.url}/api/repairs/next-id`, { method: "POST" })).status, 401);
+    const reservedIds = await Promise.all([1, 2].map(async () => {
+      const response = await fetch(`${app.url}/api/repairs/next-id`, {
+        method: "POST",
+        headers: { Authorization: ["Bearer", token].join(" ") },
+      });
+      assert.equal(response.status, 200);
+      return (await response.json()).id;
+    }));
+    assert.deepEqual(reservedIds, ["REP-1001", "REP-1002"]);
+
+    const adminToken = createSessionToken(
+      { email: "admin@taller.com", role: "admin" },
+      makeConfig().sessionSecret,
+    );
+    const adminSetting = await fetch(`${app.url}/api/settings/workshop-settings`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(adminSetting.status, 200);
+    const forbidden = await fetch(`${app.url}/api/settings/workshop-logo`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(forbidden.status, 403);
+  } finally {
+    await app.close();
+  }
 });
 
 test("la validación acepta una orden correcta y rechaza datos malos", () => {

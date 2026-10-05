@@ -77,7 +77,11 @@ La base contiene las tablas `accounts`, `sessions`, `settings`, `inventory` y
 SQLite: todas las operaciones pasan por `preload.js` y canales IPC.
 
 Al ejecutar Vite directamente, `dbService.js` conserva un fallback en el
-navegador para facilitar el desarrollo web.
+navegador para facilitar el desarrollo. Para cuentas y datos compartidos en una
+web desplegada, configura `VITE_API_URL` y consulta
+[`server/README.md`](server/README.md): se necesitan PostgreSQL, el Web Service
+de la API y un Static Site para React. El primer administrador se inicializa
+mediante variables privadas del servidor.
 
 ## Acceso y contraseñas
 
@@ -98,14 +102,14 @@ Al abrir otra vez pedirá crear una contraseña nueva; las órdenes no se pierde
 - **Cliente:** debe registrarse con correo y contraseña para crear y consultar
   sus reparaciones. Las nuevas contraseñas se almacenan con PBKDF2 y sal
   aleatoria; las cuentas anteriores con SHA-256 se actualizan al iniciar sesión.
-- La sesión de cliente se conserva solo mientras la ventana está abierta; al
-  cerrar y volver a abrir la aplicación, se solicita iniciar sesión otra vez.
+- En Electron, la sesión de cliente se conserva solo mientras la ventana está
+  abierta. En la web, el servidor emite sesiones firmadas con duración de 12 horas.
 
-La autenticación y los datos son locales a cada instalación: los instaladores de
-administrador y cliente guardan sus bases de datos por separado, y las solicitudes
-no se sincronizan automáticamente entre equipos. Para trabajar entre equipos o
-dar servicio a varios usuarios hace falta un backend compartido con sesiones
-seguras y autorización por orden.
+Electron mantiene cuentas y datos locales a cada instalación; sus bases SQLite
+no se sincronizan ni se migran automáticamente a PostgreSQL. En la web
+desplegada, PostgreSQL comparte la información y el servidor limita el acceso
+por rol y propiedad de las órdenes. El modo web de desarrollo sin
+`VITE_API_URL` conserva `localStorage` local.
 
 Consulta [`SECURITY.md`](SECURITY.md) para las limitaciones de seguridad y cómo
 reportar una vulnerabilidad.

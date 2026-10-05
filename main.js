@@ -148,6 +148,14 @@ function registerDatabaseHandlers() {
     return true;
   });
 
+  ipcMain.handle("db:accounts:update-password", (_event, email, passwordHash) => {
+    if (typeof email !== "string" || typeof passwordHash !== "string") return false;
+    const result = getDatabase()
+      .prepare("UPDATE accounts SET password_hash = ? WHERE email = ?")
+      .run(passwordHash, email);
+    return result.changes === 1;
+  });
+
   ipcMain.handle("db:session:get", () => {
     const row = getDatabase().prepare("SELECT email FROM sessions WHERE id = 1").get();
     return row?.email || "";

@@ -5,18 +5,19 @@ constancia con todo lo que necesita saber: código de la orden, datos del equipo
 estado, cómo consultarla, datos de contacto del taller, la firma y la constancia
 adjunta.
 
-**Por qué es un servidor aparte:** la app de escritorio no puede enviar correos
-por sí sola con seguridad. Hacerlo exige una contraseña SMTP, y esa contraseña
-quedaría dentro del instalador, a la vista de cualquiera. Así la contraseña vive
-solo en el servidor y la app únicamente le pide: "envía esta constancia".
+El servidor proporciona la API de la aplicación web y envía correos. Las
+credenciales SMTP y de la base de datos solo viven en el servidor, nunca en el
+navegador ni en los instaladores.
 
 ```
-App cliente (Electron) --https--> Servidor de notificaciones --SMTP--> Correo del cliente
+App web / Electron --https--> API Node.js -- PostgreSQL compartido
+                                   |
+                                   +--> SMTP --> Correo del cliente
 ```
 
-Solo usa Node.js 20+ y una dependencia (`nodemailer`).
+Requiere Node.js 20+, PostgreSQL, Nodemailer y el cliente `pg`.
 
-## Probarlo en tu PC (sin enviar correos reales)
+## Desarrollo local
 
 ```bash
 cd server
@@ -24,17 +25,20 @@ npm install
 cp .env.example .env     # en Windows: copy .env.example .env
 ```
 
-En `.env` pon `NODE_ENV=development`, `MAIL_DRY_RUN=true` y deja `NOTIFY_API_KEY`
-con cualquier texto. Luego:
+Configura `DATABASE_URL` con una base PostgreSQL de desarrollo, un `SESSION_SECRET`
+aleatorio de al menos 32 caracteres y las variables `ADMIN_EMAIL` y
+`ADMIN_PASSWORD` (mínimo 12 caracteres) para crear al primer administrador.
+Configura `MAIL_DRY_RUN=true` para que las pruebas no envíen correos. Después:
 
 ```bash
 npm run dev
 curl http://localhost:3001/health        # {"status":"ok"}
 ```
 
-Con `MAIL_DRY_RUN=true` el servidor registra el envío en el log sin mandar nada.
-Para enviar correos de verdad, pon `MAIL_DRY_RUN=false` y completa `MAIL_FROM` y
-las variables `SMTP_*`.
+Las cuentas, órdenes, ajustes e inventario web se almacenan en PostgreSQL. La
+aplicación Electron sigue usando SQLite local. La creación de cuentas públicas
+solo permite el rol de cliente; el administrador se inicializa con las variables
+de entorno anteriores.
 
 Para que la app de escritorio lo use en esa misma PC:
 
@@ -55,9 +59,42 @@ $env:NOTIFY_URL="http://localhost:3001"; $env:NOTIFY_API_KEY="la-clave"; npm sta
 | `ALLOWED_ORIGINS` | Solo para la versión web; la app Electron no lo necesita. |
 | `MAIL_DRY_RUN` | `true` = no envía, solo registra. |
 
-## Ponerlo en un servidor
+## Desplegar la web en Render
 
-Necesitas un servidor (VPS, Render, Railway, Fly.io...) y un dominio con https.
+La publicación usa tres recursos de Render: PostgreSQL, el Web Service de la API
+y un Static Site para React. El Web Service que ya aloja `server/` puede seguir
+con **Root Directory** `server`.
+
+1. Crea una base **PostgreSQL** en Render. En el Web Service, añade `DATABASE_URL`
+   usando la URL interna de esa base.
+2. En el Web Service configura `NODE_ENV=production`, `SESSION_SECRET` (aleatorio,
+   mínimo 32 caracteres), `ADMIN_EMAIL`, `ADMIN_PASSWORD` (mínimo 12 caracteres),
+   y `NOTIFY_API_KEY` (mínimo 16 caracteres). Añade SMTP y pon
+   `MAIL_DRY_RUN=false` cuando el proveedor de correo esté configurado.
+3. Crea un **Static Site** desde el mismo repositorio, rama `main`, con **Root
+   Directory** `frontend`, **Build Command** `npm ci && npm run build:web` y
+   **Publish Directory** `dist`.
+4. En el Static Site define `VITE_API_URL` con la URL pública del Web Service.
+   `VITE_APP_MODE=full` ya está guardado en `.env.web`; si Render solicita
+   variables de entorno, también puedes configurarlo explícitamente.
+5. Copia la URL pública del Static Site y configúrala como `ALLOWED_ORIGINS` en
+   el Web Service. Si luego cambia, actualiza el valor y vuelve a desplegar ambos
+   recursos.
+
+`PORT` lo asigna Render automáticamente. Configura `/health` como **Health Check
+Path** del Web Service. El esquema PostgreSQL se crea automáticamente al primer
+arranque. El primer administrador se crea una sola vez desde `ADMIN_EMAIL` y
+`ADMIN_PASSWORD`; no hay registro público de administradores.
+
+La contraseña `ADMIN_PASSWORD` no se restablece cambiando la variable una vez
+creada la cuenta. Para cambiarla se debe añadir un flujo de cambio de contraseña
+autenticado antes de operar con cuentas reales.
+
+El modo web almacena datos en la base PostgreSQL compartida; el modo Electron
+mantiene sus datos en SQLite locales y **no los sincroniza ni los migra
+automáticamente** a PostgreSQL.
+
+## Docker y PM2
 
 **Opción A: Docker**
 
@@ -77,19 +114,13 @@ npm i -g pm2
 pm2 start ecosystem.config.cjs && pm2 save && pm2 startup
 ```
 
-**Opción C: Render**
+En Docker y PM2, define igualmente `DATABASE_URL`, `SESSION_SECRET` y las
+credenciales iniciales del administrador si quieres habilitar la API compartida.
+Si solo se usa el envío de correo con una app Electron, esas variables de base de
+datos no aplican. Si no se configura `PORT`, el servicio escucha en el puerto
+3001. En todos los casos debe ir detrás de HTTPS.
 
-1. Crea un Web Service conectado al repositorio y establece `server` como **Root Directory**.
-2. Usa `npm install` como **Build Command** y `npm start` como **Start Command**.
-3. Configura las variables necesarias en Render, como `NODE_ENV=production`,
-   `NOTIFY_API_KEY`, `MAIL_FROM`, `SMTP_HOST` y las credenciales SMTP.
-
-Render proporciona `PORT` automáticamente. El servicio lo utiliza y escucha en
-`0.0.0.0`; no definas `PORT` manualmente. Configura `/health` como **Health Check Path**.
-
-En Docker y PM2, si no se configura `PORT`, el servicio usa el puerto 3001. En
-todos los casos el servicio debe ir detrás de https (la clave viaja en cada
-petición). Ejemplo con nginx:
+Ejemplo con nginx:
 
 ```nginx
 server {
