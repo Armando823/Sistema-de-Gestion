@@ -40,6 +40,29 @@ export async function loginSharedAccount(email, password) {
   return data.account;
 }
 
+export async function requestSharedPhoneCode(phone) {
+  return request("/api/auth/phone/request", {
+    method: "POST",
+    body: JSON.stringify({ phone }),
+  }, false);
+}
+
+export async function loginSharedPhone(phone, code) {
+  const data = await request("/api/auth/phone/verify", {
+    method: "POST",
+    body: JSON.stringify({ phone, code }),
+  }, false);
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...data.account, token: data.token }));
+  return data.account;
+}
+
+export async function sendSharedRepairCode(repairId) {
+  return request("/api/whatsapp/repair-code", {
+    method: "POST",
+    body: JSON.stringify({ repairId }),
+  });
+}
+
 export async function registerSharedAccount(email, password) {
   return (await request("/api/auth/register", {
     method: "POST",

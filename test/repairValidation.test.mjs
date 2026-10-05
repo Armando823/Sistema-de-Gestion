@@ -21,6 +21,17 @@ test("el correo de contacto se valida en el formulario", () => {
   assert.match(validateRepairForm({ ...form, contactEmail: "a@b.co, c@d.co" }), /no es válido/);
 });
 
+test("la autorización de WhatsApp es obligatoria cuando se enviarán mensajes de reparación", () => {
+  assert.match(
+    validateRepairForm(form, { requireWhatsAppConsent: true }),
+    /WhatsApp/i,
+  );
+  assert.equal(
+    validateRepairForm({ ...form, whatsappOptIn: true }, { requireWhatsAppConsent: true }),
+    "",
+  );
+});
+
 test("isValidEmail rechaza varios destinatarios y caracteres raros", () => {
   assert.equal(isValidEmail("ana@correo.com"), true);
   assert.equal(isValidEmail("ana@correo.com;otro@x.com"), false);
@@ -37,4 +48,6 @@ test("las órdenes con o sin correo de contacto siguen siendo válidas", () => {
   assert.equal(isValidRepair({ ...repair, contactEmail: "ana@correo.com" }), true);
   assert.equal(isValidRepair({ ...repair, contactEmail: "" }), true);
   assert.equal(isValidRepair({ ...repair, contactEmail: "malo" }), false);
+  assert.equal(isValidRepair({ ...repair, whatsappOptIn: true }), true);
+  assert.equal(isValidRepair({ ...repair, whatsappOptIn: "true" }), false);
 });

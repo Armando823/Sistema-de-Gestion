@@ -33,6 +33,14 @@ export function loadConfig(env = process.env) {
     sessionSecret: env.SESSION_SECRET || "",
     adminEmail: env.ADMIN_EMAIL || "",
     adminPassword: env.ADMIN_PASSWORD || "",
+    whatsapp: {
+      accessToken: env.WHATSAPP_ACCESS_TOKEN || "",
+      phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID || "",
+      apiVersion: env.WHATSAPP_API_VERSION || "v22.0",
+      otpTemplate: env.WHATSAPP_OTP_TEMPLATE || "customer_login_otp",
+      orderTemplate: env.WHATSAPP_ORDER_TEMPLATE || "repair_order_code",
+      templateLanguage: env.WHATSAPP_TEMPLATE_LANGUAGE || "es",
+    },
     trustProxy: toBool(env.TRUST_PROXY),
     allowedOrigins: (env.ALLOWED_ORIGINS || "")
       .split(",")
@@ -70,6 +78,9 @@ export function loadConfig(env = process.env) {
   if (!dryRun) {
     if (!config.mail.from) problems.push("MAIL_FROM es obligatorio.");
     if (!config.mail.host) problems.push("SMTP_HOST es obligatorio.");
+  }
+  if (Boolean(config.whatsapp.accessToken) !== Boolean(config.whatsapp.phoneNumberId)) {
+    problems.push("WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID deben configurarse juntos.");
   }
   if (problems.length > 0) {
     throw new Error(`Configuración inválida:\n- ${problems.join("\n- ")}`);

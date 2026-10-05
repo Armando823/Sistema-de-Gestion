@@ -3,6 +3,7 @@ import { createMailer } from "./mailer.js";
 import { createApp } from "./app.js";
 import { createDatabase } from "./database.js";
 import { hashPassword, normalizeEmail, validateCredentials } from "./auth.js";
+import { createWhatsApp } from "./whatsapp.js";
 
 const log = {
   info: (message) => console.log(`${new Date().toISOString()} INFO  ${message}`),
@@ -19,6 +20,7 @@ try {
 }
 
 const mailer = await createMailer(config, log);
+const whatsapp = createWhatsApp(config);
 let database;
 if (config.production && !config.databaseUrl) {
   log.error("DATABASE_URL es obligatoria para el servicio web en producción.");
@@ -55,7 +57,7 @@ if (config.databaseUrl) {
     process.exit(1);
   }
 }
-const server = createApp({ config, mailer, database, log });
+const server = createApp({ config, mailer, database, whatsapp, log });
 server.on("error", (error) => {
   log.error(`No se pudo iniciar el servidor: ${error.message}`);
   mailer.close();

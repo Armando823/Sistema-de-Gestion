@@ -6,6 +6,7 @@ import { sendWithRetry } from "../src/mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "../src/receiptEmail.js";
 import { createRateLimiter } from "../src/rateLimiter.js";
 import { createSessionToken, hashPassword } from "../src/auth.js";
+import { createWhatsApp } from "../src/whatsapp.js";
 
 // PNG mínimo válido de 1x1.
 const PNG =
@@ -34,10 +35,10 @@ function makeConfig(extra = {}) {
   };
 }
 
-async function start({ config = makeConfig(), mailer, database } = {}) {
+async function start({ config = makeConfig(), mailer, database, whatsapp } = {}) {
   const sent = [];
   const fake = mailer || { async send(message) { sent.push(message); return {}; } };
-  const server = createApp({ config, mailer: fake, database, log: silent, sleep: async () => {} });
+  const server = createApp({ config, mailer: fake, database, whatsapp, log: silent, sleep: async () => {} });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   return { url, sent, close: () => new Promise((resolve) => server.close(resolve)) };
@@ -62,6 +63,49 @@ test("config: usa el puerto del entorno y valida su rango", () => {
   assert.equal(loadConfig({ MAIL_DRY_RUN: "true" }).port, 3001);
   assert.throws(() => loadConfig({ PORT: "10000abc", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
   assert.throws(() => loadConfig({ PORT: "65536", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
+});
+
+test("config y cliente Meta: requiere los secretos juntos y envía plantillas con el código en el cuerpo", async () => {
+  assert.throws(
+    () => loadConfig({ MAIL_DRY_RUN: "true", WHATSAPP_ACCESS_TOKEN: "token" }),
+    /WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID/,
+  );
+  const requests = [];
+  const client = createWhatsApp({
+    whatsapp: {
+      accessToken: "token-de-prueba",
+      phoneNumberId: "123456",
+      apiVersion: "v22.0",
+      otpTemplate: "customer_login_otp",
+      orderTemplate: "repair_order_code",
+      templateLanguage: "es",
+    },
+  }, async (url, options) => {
+    requests.push({ url, options, body: JSON.parse(options.body) });
+    return { ok: true };
+  });
+  await client.sendLoginCode("+573001234567", "123456");
+  await client.sendRepairCode("+573001234567", "REP-1001");
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].url, "https://graph.facebook.com/v22.0/123456/messages");
+  assert.equal(requests[0].options.headers.Authorization, "Bearer token-de-prueba");
+  const [loginTemplate, repairTemplate] = requests.map(({ body }) => body.template);
+  assert.equal(loginTemplate.name, "customer_login_otp");
+  assert.equal(loginTemplate.language.code, "es");
+  assert.deepEqual(loginTemplate.components, [
+    { type: "body", parameters: [{ type: "text", text: "123456" }] },
+    {
+      type: "button",
+      sub_type: "url",
+      index: "0",
+      parameters: [{ type: "text", text: "123456" }],
+    },
+  ]);
+  assert.equal(repairTemplate.name, "repair_order_code");
+  assert.equal(repairTemplate.language.code, "es");
+  assert.deepEqual(repairTemplate.components, [
+    { type: "body", parameters: [{ type: "text", text: "REP-1001" }] },
+  ]);
 });
 
 test("API web: registro público crea clientes, el login emite sesión y protege recursos", async () => {
@@ -134,6 +178,123 @@ test("API web: registro público crea clientes, el login emite sesión y protege
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(forbidden.status, 403);
+  } finally {
+    await app.close();
+  }
+});
+
+test("el acceso web por WhatsApp verifica un OTP de un solo uso y limita el envío del código de reparación al propietario", async () => {
+  const codes = new Map();
+  const whatsappMessages = [];
+  const phone = "+573001234567";
+  const account = {
+    email: "whatsapp-573001234567@phone.invalid",
+    role: "client",
+    phone,
+  };
+  const database = {
+    async savePhoneLoginCode(targetPhone, codeHash, expiresAt) {
+      codes.set(targetPhone, { codeHash, expiresAt, attempts: 0 });
+    },
+    async consumePhoneLoginCode(targetPhone, codeHash, now) {
+      const stored = codes.get(targetPhone);
+      if (!stored || stored.expiresAt <= now || stored.attempts >= 5) {
+        codes.delete(targetPhone);
+        return false;
+      }
+      if (stored.codeHash !== codeHash) {
+        stored.attempts += 1;
+        return false;
+      }
+      codes.delete(targetPhone);
+      return true;
+    },
+    async getOrCreatePhoneAccount(targetPhone) {
+      return {
+        ...account,
+        phone: targetPhone,
+        role: targetPhone === "+573111111111" ? "admin" : "client",
+      };
+    },
+    async getRepairById(id) {
+      return id === "REP-1001"
+        ? { id, phone, owner_phone: phone, owner_email: account.email, whatsapp_opt_in: true }
+        : id === "REP-1003"
+        ? { id, phone, owner_phone: phone, owner_email: account.email, whatsapp_opt_in: false }
+        : { id, phone: "+573111111111", owner_phone: "+573111111111", owner_email: "otro@phone.invalid" };
+    },
+  };
+  const whatsapp = {
+    async sendLoginCode(targetPhone, code) {
+      whatsappMessages.push({ type: "login", phone: targetPhone, code });
+    },
+    async sendRepairCode(targetPhone, repairId) {
+      whatsappMessages.push({ type: "repair", phone: targetPhone, repairId });
+    },
+  };
+  const app = await start({ database, whatsapp });
+  try {
+    const requested = await fetch(`${app.url}/api/auth/phone/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: "+57 300 123 4567" }),
+    });
+    assert.equal(requested.status, 200);
+    assert.match((await requested.json()).message, /WhatsApp/);
+    assert.equal(whatsappMessages[0].phone, phone);
+
+    const wrongCode = whatsappMessages[0].code === "999999" ? "000000" : "999999";
+    const wrong = await fetch(`${app.url}/api/auth/phone/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, code: wrongCode }),
+    });
+    assert.equal(wrong.status, 401);
+
+    const verified = await fetch(`${app.url}/api/auth/phone/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, code: whatsappMessages[0].code }),
+    });
+    assert.equal(verified.status, 200);
+    const { token, account: verifiedAccount } = await verified.json();
+    assert.equal(verifiedAccount.phone, phone);
+    assert.equal(verifiedAccount.role, "client");
+
+    const sendOrderCode = (repairId) => fetch(`${app.url}/api/whatsapp/repair-code`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ repairId }),
+    });
+    assert.equal((await sendOrderCode("REP-1001")).status, 200);
+    assert.deepEqual(whatsappMessages.at(-1), { type: "repair", phone, repairId: "REP-1001" });
+    assert.equal((await sendOrderCode("REP-1003")).status, 403);
+    assert.equal((await sendOrderCode("REP-1002")).status, 403);
+
+    const reused = await fetch(`${app.url}/api/auth/phone/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, code: whatsappMessages[0].code }),
+    });
+    assert.equal(reused.status, 401);
+
+    const adminPhone = "+573111111111";
+    await fetch(`${app.url}/api/auth/phone/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: adminPhone }),
+    });
+    const adminCode = whatsappMessages.at(-1).code;
+    const adminPhoneLogin = await fetch(`${app.url}/api/auth/phone/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: adminPhone, code: adminCode }),
+    });
+    assert.equal(adminPhoneLogin.status, 403);
+    assert.equal("token" in await adminPhoneLogin.json(), false);
   } finally {
     await app.close();
   }

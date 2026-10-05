@@ -1,11 +1,22 @@
 import http from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { createRateLimiter } from "./rateLimiter.js";
 import { sendWithRetry } from "./mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "./receiptEmail.js";
 import { createSessionToken, hashPassword, normalizeEmail, validateCredentials, verifyPassword, verifySessionToken } from "./auth.js";
 
 const HOUR = 60 * 60 * 1000;
+const PHONE_PATTERN = /^\+[1-9]\d{7,14}$/;
+
+function normalizePhone(value) {
+  if (typeof value !== "string") return "";
+  const phone = value.replace(/[\s().-]/g, "");
+  return PHONE_PATTERN.test(phone) ? phone : "";
+}
+
+function hashPhoneCode(phone, code, secret) {
+  return createHmac("sha256", secret).update(`${phone}:${code}`).digest("hex");
+}
 
 function sameSecret(received, expected) {
   const receivedBytes = Buffer.from(String(received ?? ""));
@@ -67,6 +78,7 @@ function isValidRepair(repair) {
     typeof repair === "object" &&
     /^REP-\d{4,8}$/.test(repair.id) &&
     statuses.includes(repair.status) &&
+    (repair.whatsappOptIn === undefined || typeof repair.whatsappOptIn === "boolean") &&
     Array.isArray(repair.photos ?? []) &&
     (repair.photos ?? []).length <= 3 &&
     (repair.photos ?? []).every((photo) =>
@@ -81,11 +93,14 @@ function isValidRepair(repair) {
   );
 }
 
-export function createApp({ config, mailer, database, log = console, now = Date.now, sleep }) {
+export function createApp({ config, mailer, database, whatsapp, log = console, now = Date.now, sleep }) {
   const ipLimiter = createRateLimiter({ limit: config.limits.perIpPerHour, windowMs: HOUR, now });
   const emailLimiter = createRateLimiter({ limit: config.limits.perEmailPerHour, windowMs: HOUR, now });
   const authLimiter = createRateLimiter({ limit: 10, windowMs: 15 * 60 * 1000, now });
+  const phoneCodeIpLimiter = createRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000, now });
+  const phoneCodeLimiter = createRateLimiter({ limit: 3, windowMs: 15 * 60 * 1000, now });
   const lookupLimiter = createRateLimiter({ limit: 20, windowMs: HOUR, now });
+  const orderCodeLimiter = createRateLimiter({ limit: 5, windowMs: HOUR, now });
 
   function clientIp(req) {
     if (config.trustProxy) {
@@ -157,7 +172,56 @@ export function createApp({ config, mailer, database, log = console, now = Date.
     requireDatabase();
     if (req.method === "GET" && pathname === "/api/auth/me") {
       const session = requireSession(req);
-      send(res, 200, { account: { email: session.email, role: session.role } }, cors);
+      send(res, 200, { account: { email: session.email, role: session.role, phone: session.phone } }, cors);
+      return;
+    }
+    if (req.method === "POST" && pathname === "/api/auth/phone/request") {
+      const body = parseJson(await readBody(req, config.limits.bodyBytes));
+      const phone = normalizePhone(body?.phone);
+      if (!phone) throw new HttpError(422, "Escribe el celular con código de país, por ejemplo +573001234567.");
+      const ipRate = phoneCodeIpLimiter.take(clientIp(req));
+      const phoneRate = phoneCodeLimiter.take(phone);
+      if (!ipRate.allowed || !phoneRate.allowed) {
+        throw new HttpError(429, "No se pudo enviar el código. Inténtalo más tarde.", {
+          "Retry-After": String(Math.max(ipRate.retryAfterSec || 0, phoneRate.retryAfterSec || 0)),
+        });
+      }
+      const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+      await database.savePhoneLoginCode(
+        phone,
+        hashPhoneCode(phone, code, config.sessionSecret),
+        now() + 10 * 60 * 1000,
+      );
+      try {
+        await whatsapp.sendLoginCode(phone, code);
+      } catch (error) {
+        log.error(`No se pudo enviar el código de acceso por WhatsApp: ${error?.message || error}`);
+        throw new HttpError(502, "No se pudo enviar el código por WhatsApp. Revisa la configuración del servidor.");
+      }
+      send(res, 200, { ok: true, message: "Si el número está disponible, recibirás un código por WhatsApp." }, cors);
+      return;
+    }
+    if (req.method === "POST" && pathname === "/api/auth/phone/verify") {
+      takeAuthLimit(req);
+      const body = parseJson(await readBody(req, config.limits.bodyBytes));
+      const phone = normalizePhone(body?.phone);
+      const code = typeof body?.code === "string" ? body.code.trim() : "";
+      if (!phone || !/^\d{6}$/.test(code)) {
+        throw new HttpError(422, "El celular o el código no son válidos.");
+      }
+      const valid = await database.consumePhoneLoginCode(
+        phone,
+        hashPhoneCode(phone, code, config.sessionSecret),
+        now(),
+      );
+      if (!valid) throw new HttpError(401, "El código no es válido o venció. Solicita uno nuevo.");
+      const stored = await database.getOrCreatePhoneAccount(phone);
+      if (!stored || stored.role !== "client") {
+        throw new HttpError(403, "Esta cuenta no puede ingresar desde el acceso de cliente.");
+      }
+      const account = { email: stored.email, role: stored.role, phone: stored.phone };
+      const token = createSessionToken(account, config.sessionSecret, now());
+      send(res, 200, { token, account }, cors);
       return;
     }
     if (req.method !== "POST" || !["/api/auth/login", "/api/auth/register"].includes(pathname)) {
@@ -283,6 +347,7 @@ export function createApp({ config, mailer, database, log = console, now = Date.
       send(res, 200, { items: await database.loadInventory() }, cors);
       return;
     }
+
     if (req.method === "PUT" && pathname === "/api/inventory") {
       const body = parseJson(await readBody(req, 1_000_000));
       if (!Array.isArray(body?.items) || body.items.length > 10_000) {
@@ -293,6 +358,43 @@ export function createApp({ config, mailer, database, log = console, now = Date.
       return;
     }
     throw new HttpError(404, "No encontrado.");
+  }
+
+  async function handleWhatsAppRepairCode(req, res, cors) {
+    requireDatabase();
+    const session = requireSession(req);
+    if (req.method !== "POST") throw new HttpError(405, "Método no permitido.", { Allow: "POST, OPTIONS" });
+    const rate = orderCodeLimiter.take(session.phone || session.email);
+    if (!rate.allowed) {
+      throw new HttpError(429, "No se pudo enviar el mensaje. Inténtalo más tarde.", {
+        "Retry-After": String(rate.retryAfterSec),
+      });
+    }
+    const body = parseJson(await readBody(req, 4_096));
+    const id = typeof body?.repairId === "string" ? body.repairId.trim().toUpperCase() : "";
+    if (!/^REP-\d{4,8}$/.test(id)) throw new HttpError(422, "El código de reparación no es válido.");
+    const repair = await database.getRepairById(id);
+    if (!repair) throw new HttpError(404, "No se encontró la reparación.");
+    let destination;
+    if (session.role === "admin") {
+      destination = normalizePhone(repair.phone);
+    } else if (session.phone &&
+      (repair.owner_phone === session.phone || repair.owner_email === session.email)) {
+      destination = session.phone;
+    } else {
+      throw new HttpError(403, "No tienes permisos para enviar este código.");
+    }
+    if (repair.whatsapp_opt_in !== true) {
+      throw new HttpError(403, "No se registró autorización para recibir mensajes por WhatsApp.");
+    }
+    if (!destination) throw new HttpError(422, "El celular debe incluir el código de país para WhatsApp.");
+    try {
+      await whatsapp.sendRepairCode(destination, id);
+    } catch (error) {
+      log.error(`No se pudo enviar el código de ${id} por WhatsApp: ${error?.message || error}`);
+      throw new HttpError(502, "No se pudo enviar el código por WhatsApp. Inténtalo de nuevo más tarde.");
+    }
+    send(res, 200, { ok: true }, cors);
   }
 
   async function handleReceipt(req, res, cors) {
@@ -367,6 +469,10 @@ export function createApp({ config, mailer, database, log = console, now = Date.
         await handleInventory(req, res, pathname, cors);
         return;
       }
+      if (pathname === "/api/whatsapp/repair-code") {
+        await handleWhatsAppRepairCode(req, res, cors);
+        return;
+      }
       if (pathname === "/api/notifications/receipt") {
         if (req.method !== "POST") throw new HttpError(405, "Método no permitido.", { Allow: "POST, OPTIONS" });
         await handleReceipt(req, res, cors);
@@ -394,7 +500,10 @@ export function createApp({ config, mailer, database, log = console, now = Date.
     ipLimiter.stop();
     emailLimiter.stop();
     authLimiter.stop();
+    phoneCodeIpLimiter.stop();
+    phoneCodeLimiter.stop();
     lookupLimiter.stop();
+    orderCodeLimiter.stop();
   });
   return server;
 }

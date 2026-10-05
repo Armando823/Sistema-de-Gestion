@@ -12,7 +12,9 @@ navegador ni en los instaladores.
 ```
 App web / Electron --https--> API Node.js -- PostgreSQL compartido
                                    |
-                                   +--> SMTP --> Correo del cliente
+                    +--------------+--------------+
+                    |                             |
+                    +--> SMTP --> Correo          +--> Meta Cloud API --> WhatsApp
 ```
 
 Requiere Node.js 20+, PostgreSQL, Nodemailer y el cliente `pg`.
@@ -58,6 +60,11 @@ $env:NOTIFY_URL="http://localhost:3001"; $env:NOTIFY_API_KEY="la-clave"; npm sta
 | `RATE_LIMIT_IP_PER_HOUR` / `RATE_LIMIT_EMAIL_PER_HOUR` | Límites anti-abuso (30 y 5 por defecto). |
 | `ALLOWED_ORIGINS` | Solo para la versión web; la app Electron no lo necesita. |
 | `MAIL_DRY_RUN` | `true` = no envía, solo registra. |
+| `WHATSAPP_ACCESS_TOKEN` | Token privado de Meta para WhatsApp Cloud API. |
+| `WHATSAPP_PHONE_NUMBER_ID` | ID del número emisor de WhatsApp Business, no el número telefónico. |
+| `WHATSAPP_API_VERSION` | Versión de Graph API (por defecto `v22.0`). |
+| `WHATSAPP_OTP_TEMPLATE` / `WHATSAPP_ORDER_TEMPLATE` | Nombres exactos de las plantillas aprobadas (por defecto `customer_login_otp` y `repair_order_code`). |
+| `WHATSAPP_TEMPLATE_LANGUAGE` | Código de idioma aprobado por Meta (por defecto `es`). |
 
 ## Desplegar la web en Render
 
@@ -80,6 +87,30 @@ con **Root Directory** `server`.
 5. Copia la URL pública del Static Site y configúrala como `ALLOWED_ORIGINS` en
    el Web Service. Si luego cambia, actualiza el valor y vuelve a desplegar ambos
    recursos.
+6. En Meta Business configura WhatsApp Cloud API y crea/aprueba dos plantillas
+   en español: una plantilla **Authentication/OTP** para el código de acceso,
+   con botón de copiar código, y una plantilla **Utility** para el código de
+   reparación con una variable de texto `{{1}}` en el cuerpo. En el
+   Web Service configura `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`,
+   `WHATSAPP_OTP_TEMPLATE`, `WHATSAPP_ORDER_TEMPLATE` y
+   `WHATSAPP_TEMPLATE_LANGUAGE`, y vuelve a desplegar el servicio. No pongas el
+   token en el Static Site ni en el código fuente.
+
+El cliente inicia sesión con el celular en formato internacional E.164 (por
+ejemplo `+573001234567`), autoriza el envío de mensajes de acceso, recibe un
+código de seis dígitos por WhatsApp y lo confirma en la web. Los códigos vencen
+a los 10 minutos, se consumen una sola vez y tienen intentos limitados. Al crear
+una reparación, el cliente debe autorizar por separado los mensajes de esa
+reparación; la autorización queda guardada en PostgreSQL. La orden se guarda
+antes de enviar su código por WhatsApp; si Meta falla, permanece guardada y el
+cliente puede reenviar el código desde su consulta. Las reparaciones antiguas
+no se enviarán por WhatsApp hasta que se haya registrado autorización.
+Las órdenes antiguas se asocian al iniciar sesión si su teléfono coincide con
+el número verificado.
+
+Sin credenciales de Meta y plantillas aprobadas, el servidor puede desplegarse,
+pero no podrá enviar códigos ni completar el acceso de clientes web. El acceso
+administrativo sigue usando correo y contraseña.
 
 `PORT` lo asigna Render automáticamente. Configura `/health` como **Health Check
 Path** del Web Service. El esquema PostgreSQL se crea automáticamente al primer

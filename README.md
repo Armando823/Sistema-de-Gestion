@@ -42,7 +42,9 @@ npm run dev
 - Panel de administrador para crear ordenes de reparacion.
 - Busqueda por codigo, cliente o equipo.
 - Actualizacion del estado de cada orden.
-- Registro e inicio de sesión de clientes mediante correo y contraseña.
+- En la web desplegada, los clientes ingresan con el celular verificado por un
+  código temporal de WhatsApp; Electron conserva el acceso local con correo y
+  contraseña.
 - El cliente puede crear solicitudes y consultar sus reparaciones después de iniciar sesión.
 - El administrador gestiona las solicitudes y agrega las fotos de recepción desde el panel.
 - Persistencia local en SQLite desde Electron.
@@ -99,9 +101,13 @@ datos de la app en `%APPDATA%`), por ejemplo con
 `sqlite3 taller-digital.db "DELETE FROM settings WHERE key='admin_credential';"`.
 Al abrir otra vez pedirá crear una contraseña nueva; las órdenes no se pierden.
 
-- **Cliente:** debe registrarse con correo y contraseña para crear y consultar
-  sus reparaciones. Las nuevas contraseñas se almacenan con PBKDF2 y sal
-  aleatoria; las cuentas anteriores con SHA-256 se actualizan al iniciar sesión.
+- **Cliente en Electron:** se registra con correo y contraseña; las nuevas
+  contraseñas se almacenan con PBKDF2 y sal aleatoria; las cuentas anteriores
+  con SHA-256 se actualizan al iniciar sesión.
+- **Cliente web:** ingresa con su celular en formato internacional y confirma el
+  código de seis dígitos que se envía a su WhatsApp. Requiere configurar Meta
+  WhatsApp Cloud API y aprobar las plantillas descritas en
+  [`server/README.md`](server/README.md).
 - En Electron, la sesión de cliente se conserva solo mientras la ventana está
   abierta. En la web, el servidor emite sesiones firmadas con duración de 12 horas.
 
@@ -116,18 +122,20 @@ reportar una vulnerabilidad.
 
 ## Privacidad de las órdenes
 
-Un cliente solo ve las órdenes que creó con su cuenta. Para consultar una orden
-creada por el taller (sin cuenta asociada) debe escribir el código **y** el
-teléfono registrado en la orden, así no se pueden ver órdenes ajenas probando
+Un cliente web solo ve órdenes asociadas a su cuenta o al celular que verificó
+por WhatsApp. La consulta pública de una orden aún no asociada exige el código
+**y** el teléfono registrado, para impedir que se vean órdenes ajenas probando
 códigos consecutivos.
 
-## Correo de la constancia al cliente
+## Notificaciones de órdenes
 
-Al enviar su solicitud, el cliente escribe su correo (se propone el de su cuenta) y
-recibe una constancia con el código de la orden, los datos del equipo, cómo
-consultarla, el contacto del taller y su firma. Si el correo falla, la orden se
-guarda igual y se puede reenviar: el cliente desde "Consulta tu reparación" y el
-administrador desde la constancia de la orden.
+En la web, el cliente se identifica con su celular verificado. Al guardar una
+solicitud, el sistema envía su código de reparación por WhatsApp; también puede
+reenviarlo desde "Consulta tu reparación". Antes de crearla, el cliente debe
+autorizar explícitamente esos mensajes por WhatsApp; esta autorización se guarda
+con la orden. Si WhatsApp falla, la orden queda guardada y el sitio muestra el
+error. El correo de constancia continúa disponible si el cliente agrega un correo
+al formulario y en la versión Electron.
 
 El envío lo hace un servicio aparte, en la carpeta `server/` (la app no guarda
 contraseñas de correo). Instrucciones de instalación, configuración y despliegue en

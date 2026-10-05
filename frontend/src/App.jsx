@@ -17,7 +17,10 @@ import {
   isDesktop,
   lookupSharedRepair,
   nextSharedRepairId,
+  loginSharedPhone,
+  requestSharedPhoneCode,
   restoreSharedSession,
+  sendSharedRepairCode,
   usesSharedApi,
 } from "./services/dbService";
 import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
@@ -50,6 +53,7 @@ const emptyForm = {
   authorizedBy: "",
   contactEmail: "",
   consent: false,
+  whatsappOptIn: false,
 };
 
 const supportEmail = "soporte@tallerdigital.com";
@@ -147,12 +151,15 @@ function receiptHtml(repair) {
   return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd>${repair.authorizedBy ? `<dt>Recibido por</dt><dd>${escapeHtml(repair.authorizedBy)}</dd>` : ""}</dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${signatureMarkup}</body></html>`;
 }
 
-function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin }) {
+function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin, onPhoneLogin, onPhoneCodeRequest }) {
   const [adminLogin, setAdminLogin] = useState(!CLIENT_ENABLED);
   const [clientAccess, setClientAccess] = useState("welcome");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [phoneCodeSent, setPhoneCodeSent] = useState(false);
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [error, setError] = useState("");
   const [adminConfigured, setAdminConfigured] = useState(true);
@@ -227,6 +234,9 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin }) {
     setAdminLogin(false);
     setClientAccess(access);
     setEmail("");
+    setPhone("");
+    setPhoneCode("");
+    setPhoneCodeSent(false);
     setPassword("");
     setPasswordConfirmation("");
     setError("");
@@ -240,6 +250,24 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin }) {
       return;
     }
     setError("");
+  }
+
+  async function requestPhoneCode(event) {
+    event.preventDefault();
+    const result = await onPhoneCodeRequest(phone);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    setError("");
+    setPhoneCodeSent(true);
+  }
+
+  async function submitPhoneCode(event) {
+    event.preventDefault();
+    const result = await onPhoneLogin(phone, phoneCode);
+    if (result.error) setError(result.error);
+    else setError("");
   }
 
   async function submitRegistration(event) {
@@ -275,7 +303,9 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin }) {
           <p>
             {adminLogin
               ? "Este acceso está reservado para la administración del taller."
-              : "Crea una cuenta para consultar y gestionar tus reparaciones."}
+              : onPhoneLogin
+                ? "Ingresa con tu celular y confirma el código que recibirás por WhatsApp."
+                : "Crea una cuenta para consultar y gestionar tus reparaciones."}
           </p>
         </div>
         {adminLogin && !adminConfigured ? (
@@ -346,18 +376,67 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin }) {
         ) : clientAccess === "welcome" ? (
           <div className="public-access">
             <button type="button" className="primary-button" onClick={() => openClientAccess("login")}>
-              Iniciar sesión como cliente
+              {onPhoneLogin ? "Ingresar con WhatsApp" : "Iniciar sesión como cliente"}
             </button>
-            <button type="button" className="secondary-button" onClick={() => openClientAccess("register")}>
-              Crear cuenta de cliente
-            </button>
-            <p>Necesitas una cuenta para crear y consultar tus reparaciones.</p>
+            {!onPhoneLogin && (
+              <button type="button" className="secondary-button" onClick={() => openClientAccess("register")}>
+                Crear cuenta de cliente
+              </button>
+            )}
+            <p>{onPhoneLogin
+              ? "Al solicitarlo, autorizas a Taller Digital a enviarte el código de acceso por WhatsApp."
+              : "Necesitas una cuenta para crear y consultar tus reparaciones."}</p>
             {ADMIN_ENABLED && CLIENT_ENABLED && (
               <button type="button" className="private-access" onClick={openAdminLogin}>
                 Acceso administrativo
               </button>
             )}
           </div>
+        ) : onPhoneLogin ? (
+          <form className="login-form" onSubmit={phoneCodeSent ? submitPhoneCode : requestPhoneCode}>
+            <label>
+              Número de celular con código de país
+              <input
+                required
+                type="tel"
+                autoComplete="tel"
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="+573001234567"
+                readOnly={phoneCodeSent}
+              />
+              <small className="field-help">
+                Al solicitar el código autorizas a Taller Digital a enviarte mensajes de acceso por WhatsApp.
+              </small>
+            </label>
+            {phoneCodeSent && (
+              <label>
+                Código recibido por WhatsApp
+                <input
+                  required
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  pattern="[0-9]{6}"
+                  value={phoneCode}
+                  onChange={(event) => setPhoneCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                />
+              </label>
+            )}
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button type="submit" className="primary-button">
+              {phoneCodeSent ? "Verificar código e ingresar" : "Enviar código por WhatsApp"}
+            </button>
+            <button type="button" className="private-access" onClick={() => openClientAccess("welcome")}>
+              Volver
+            </button>
+            {phoneCodeSent && (
+              <button type="button" className="private-access" onClick={() => setPhoneCodeSent(false)}>
+                Cambiar celular
+              </button>
+            )}
+          </form>
         ) : (
           <form className="login-form" onSubmit={clientAccess === "register" ? submitRegistration : submitClient}>
             <label>
@@ -421,6 +500,7 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin }) {
 function App({ version = "Final" }) {
   const [repairs, setRepairs] = useState([]);
   const [clientEmail, setClientEmail] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
   const [role, setRole] = useState(null);
   const [dataReady, setDataReady] = useState(false);
   const [repairsReady, setRepairsReady] = useState(false);
@@ -465,6 +545,7 @@ function App({ version = "Final" }) {
         setNotice("No se pudieron cargar los ajustes del taller.");
       }
       setClientEmail(account.email);
+      setClientPhone(account.phone || "");
       setRole(account.role);
       applySettings(savedSettings);
       setDataReady(true);
@@ -499,6 +580,7 @@ function App({ version = "Final" }) {
         setNotice("No se pudieron cargar los ajustes para proteger los datos existentes.");
       }
       setClientEmail(sessionEmail);
+      setClientPhone("");
       setRole(
         isDesktop() && ADMIN_ENABLED && !CLIENT_ENABLED
           ? "admin"
@@ -515,6 +597,7 @@ function App({ version = "Final" }) {
       setRepairsReady(false);
       setSettingsReady(false);
       setClientEmail("");
+      setClientPhone("");
       setRole(null);
       setSettings(defaultSettings);
       setNotice("No se pudo cargar la base de datos local.");
@@ -574,11 +657,15 @@ function App({ version = "Final" }) {
       saveSetting("workshop-settings", settings);
     }
   }, [dataReady, settingsReady, settings, role]);
-  // El correo de la cuenta se propone en el formulario; el cliente puede cambiarlo.
+  // El correo de la cuenta se propone en el formulario local; no usar la identidad sintética por teléfono.
   useEffect(() => {
-    if (!clientEmail) return;
+    if (!clientEmail || clientPhone) return;
     setClientForm((form) => (form.contactEmail ? form : { ...form, contactEmail: clientEmail }));
-  }, [clientEmail]);
+  }, [clientEmail, clientPhone]);
+  useEffect(() => {
+    if (!clientPhone) return;
+    setClientForm((form) => (form.phone ? form : { ...form, phone: clientPhone }));
+  }, [clientPhone]);
   const filteredRepairs = repairs.filter((repair) =>
     [repair.id, repair.customer, repair.device].some((value) =>
       value.toLowerCase().includes(search.toLowerCase()),
@@ -613,12 +700,24 @@ function App({ version = "Final" }) {
       updatedAt: timestamp,
       updated: formatTimestamp(timestamp),
     };
-    setRepairs([newRepair, ...repairs]);
+    const updatedRepairs = [newRepair, ...repairs];
+    if (!await saveRepairs(updatedRepairs)) {
+      setNotice(`${id}: no se pudo guardar la orden. Revisa tu conexión e inténtalo de nuevo.`);
+      return;
+    }
+    setRepairs(updatedRepairs);
     clearForm();
     clearError();
-    if (newRepair.contactEmail) {
-      emailReceipt(newRepair, noticeMessage);
-    } else {
+    if (newRepair.contactEmail) await emailReceipt(newRepair, noticeMessage);
+    if (clientPhone && !isAdmin) {
+      setNotice(`${id} quedó guardada. Enviando el código por WhatsApp...`);
+      try {
+        await sendSharedRepairCode(id);
+        setNotice(`${id} quedó guardada y enviamos el código a tu WhatsApp.`);
+      } catch (error) {
+        setNotice(`${id} quedó guardada, pero no se pudo enviar el código por WhatsApp: ${error.message}`);
+      }
+    } else if (!newRepair.contactEmail) {
       setNotice(`${id} ${noticeMessage}`);
     }
   }
@@ -644,15 +743,20 @@ function App({ version = "Final" }) {
 
   async function addClientRepair(event) {
     event.preventDefault();
-    const validationError = validateRepairForm(clientForm, { requireEmail: true });
+    const validationError = validateRepairForm(clientForm, {
+      requireEmail: !clientPhone,
+      requireWhatsAppConsent: Boolean(clientPhone),
+    });
     if (validationError) return setClientFormError(validationError);
     await createRepair(
       {
         ...clientForm,
+        phone: clientPhone || clientForm.phone,
         contactEmail: clientForm.contactEmail.trim(),
         ownerEmail: clientEmail,
+        whatsappOptIn: Boolean(clientPhone && clientForm.whatsappOptIn === true),
       },
-      () => setClientForm({ ...emptyForm, contactEmail: clientEmail }),
+      () => setClientForm({ ...emptyForm, phone: clientPhone, contactEmail: clientPhone ? "" : clientEmail }),
       () => setClientFormError(""),
       "enviada al taller",
     );
@@ -814,6 +918,7 @@ function App({ version = "Final" }) {
     const result = await authenticateClient(email, password);
     if (result.account) {
       setClientEmail(result.account.email);
+      setClientPhone(result.account.phone || "");
       if (!await saveClientSession(result.account.email)) {
         return { error: "No se pudo guardar la sesión. Inténtalo de nuevo." };
       }
@@ -836,6 +941,40 @@ function App({ version = "Final" }) {
     return result;
   }
 
+  async function handlePhoneCodeRequest(phone) {
+    try {
+      await requestSharedPhoneCode(phone);
+      return {};
+    } catch (error) {
+      return { error: error.message || "No se pudo enviar el código por WhatsApp." };
+    }
+  }
+
+  async function handlePhoneLogin(phone, code) {
+    try {
+      const account = await loginSharedPhone(phone, code);
+      if (account.role !== "client") {
+        await clearClientSession();
+        return { error: "Esta cuenta no puede ingresar desde el acceso de cliente." };
+      }
+      const [savedRepairs, savedSettings] = await Promise.all([
+        loadRepairs(),
+        readSetting("workshop-settings", {}),
+      ]);
+      setRepairs(savedRepairs);
+      setRepairsReady(true);
+      setSettingsReady(true);
+      setSettings({ ...defaultSettings, ...savedSettings });
+      setClientEmail(account.email);
+      setClientPhone(account.phone || phone);
+      setRole("client");
+      return {};
+    } catch (error) {
+      await clearClientSession();
+      return { error: error.message || "No se pudo iniciar sesión." };
+    }
+  }
+
   async function handleAdminLogin(email, password) {
     if (!usesSharedApi()) {
       return { error: "El acceso web no está configurado." };
@@ -852,6 +991,7 @@ function App({ version = "Final" }) {
       setSettingsReady(true);
       setSettings({ ...defaultSettings, ...savedSettings });
       setClientEmail(result.account.email);
+      setClientPhone("");
       setRole("admin");
       return result;
     } catch (error) {
@@ -871,6 +1011,8 @@ function App({ version = "Final" }) {
         onClientLogin={handleClientLogin}
         onClientRegister={handleClientRegister}
         onAdminLogin={usesSharedApi() ? handleAdminLogin : undefined}
+        onPhoneLogin={usesSharedApi() ? handlePhoneLogin : undefined}
+        onPhoneCodeRequest={usesSharedApi() ? handlePhoneCodeRequest : undefined}
       />
     );
   }
@@ -880,6 +1022,7 @@ function App({ version = "Final" }) {
   function logout() {
     setRole(null);
     setClientEmail("");
+    setClientPhone("");
     clearClientSession();
     setSearch("");
     setClientForm(emptyForm);
@@ -930,8 +1073,8 @@ function App({ version = "Final" }) {
         )}
         {!isAdmin && (
           <div className="client-topbar-actions">
-            <span className="client-role" title={clientEmail}>
-              {clientEmail}
+            <span className="client-role" title={clientPhone || clientEmail}>
+              {clientPhone || clientEmail}
             </span>
             <a
               className="support-button"
@@ -999,13 +1142,23 @@ function App({ version = "Final" }) {
         <ClientView
           repairs={repairs}
           clientEmail={clientEmail}
+          clientPhone={clientPhone}
+          requireWhatsAppConsent={Boolean(clientPhone)}
           form={clientForm}
           setForm={setClientForm}
           formError={clientFormError}
           clearFormError={() => setClientFormError("")}
           addRepair={addClientRepair}
-          emptyValues={{ ...emptyForm, contactEmail: clientEmail }}
-          onEmail={emailReceipt}
+          emptyValues={{ ...emptyForm, phone: clientPhone, contactEmail: clientPhone ? "" : clientEmail }}
+          onEmail={clientPhone ? undefined : emailReceipt}
+          onWhatsApp={async (repair) => {
+            try {
+              await sendSharedRepairCode(repair.id);
+              setNotice(`Enviamos el código de ${repair.id} por WhatsApp.`);
+            } catch (error) {
+              setNotice(`No se pudo reenviar el código de ${repair.id}: ${error.message}`);
+            }
+          }}
         />
       )}
       {confirmation && (
@@ -1629,6 +1782,7 @@ function RepairForm({
   deviceSuggestions = [],
   emptyValues = emptyForm,
   requireEmail = false,
+  requireWhatsAppConsent = false,
 }) {
   const [showAllDevices, setShowAllDevices] = useState(false);
   const normalizedDevice = form.device.trim().toLowerCase();
@@ -1777,6 +1931,20 @@ function RepairForm({
         Confirmo que el cliente autoriza la revisión y recibe esta constancia
         del estado del equipo.
       </label>
+      {requireWhatsAppConsent && (
+        <label className="consent">
+          <input
+            type="checkbox"
+            required
+            checked={form.whatsappOptIn}
+            onChange={(event) =>
+              setForm({ ...form, whatsappOptIn: event.target.checked })
+            }
+          />{" "}
+          Autorizo a Taller Digital a enviarme por WhatsApp el código de esta
+          reparación y, si lo solicito, a reenviarlo al celular verificado.
+        </label>
+      )}
       <SignaturePad
         value={form.signature}
         onChange={(signature) => setForm({ ...form, signature })}
@@ -1907,6 +2075,8 @@ function OrderList({
 function ClientView({
   repairs,
   clientEmail,
+  clientPhone,
+  requireWhatsAppConsent,
   form,
   setForm,
   formError,
@@ -1914,36 +2084,47 @@ function ClientView({
   addRepair,
   emptyValues,
   onEmail,
+  onWhatsApp,
 }) {
   const [code, setCode] = useState("");
   const [lookupPhone, setLookupPhone] = useState("");
   const [result, setResult] = useState(null);
+  const [isLookingUp, setIsLookingUp] = useState(false);
+  const [lookupError, setLookupError] = useState("");
 
   async function findRepair(event) {
     event.preventDefault();
     const normalizedCode = code.trim().toUpperCase();
     if (!/^REP-\d{4,8}$/.test(normalizedCode)) {
+      setLookupError("");
       setResult(false);
       return;
     }
-    const ownedRepair = repairs.find(
-      (repair) =>
-        repair.id === normalizedCode &&
-        canClientView(repair, clientEmail, lookupPhone),
-    );
-    if (ownedRepair) {
-      setResult(ownedRepair);
-      return;
-    }
-    if (usesSharedApi() && lookupPhone.trim()) {
-      try {
-        setResult((await lookupSharedRepair(normalizedCode, lookupPhone)) || false);
-      } catch {
-        setResult(false);
+    setIsLookingUp(true);
+    setLookupError("");
+    setResult(null);
+    try {
+      const ownedRepair = repairs.find(
+        (repair) =>
+          repair.id === normalizedCode &&
+          (repair.ownerPhone === clientPhone ||
+            canClientView(repair, clientEmail, clientPhone || lookupPhone)),
+      );
+      if (ownedRepair) {
+        setResult(ownedRepair);
+        return;
       }
-      return;
+      if (usesSharedApi() && lookupPhone.trim()) {
+        setResult((await lookupSharedRepair(normalizedCode, lookupPhone)) || false);
+        return;
+      }
+      setResult(false);
+    } catch {
+      setLookupError("No pudimos consultar la orden. Comprueba tu conexión e inténtalo otra vez.");
+      setResult(false);
+    } finally {
+      setIsLookingUp(false);
     }
-    setResult(false);
   }
 
   const progressStatusIndex = {
@@ -1957,7 +2138,9 @@ function ClientView({
   const currentStatusIndex = result ? progressStatusIndex[result.status] ?? -1 : -1;
   const deviceSuggestions = [
     ...new Set([
-      ...repairsOwnedBy(repairs, clientEmail).map((repair) => repair.device),
+    ...repairs.filter((repair) =>
+      repair.ownerEmail === clientEmail || (clientPhone && repair.ownerPhone === clientPhone),
+    ).map((repair) => repair.device),
       ...laptopCatalog,
     ]),
   ];
@@ -1973,7 +2156,8 @@ function ClientView({
           clearFormError={clearFormError}
           addRepair={addRepair}
           emptyValues={emptyValues}
-          requireEmail
+          requireEmail={!clientPhone}
+          requireWhatsAppConsent={requireWhatsAppConsent}
           title="Solicitar reparación"
           subtitle="(el taller la revisará)"
           submitLabel="Enviar solicitud"
@@ -1995,18 +2179,24 @@ function ClientView({
             maxLength="12"
             aria-label="Código de reparación"
             value={code}
+            disabled={isLookingUp}
             onChange={(event) => setCode(event.target.value.toUpperCase())}
             placeholder="Código: REP-1001"
           />
-          <input
-            type="tel"
-            maxLength="30"
-            aria-label="Teléfono registrado en la orden"
-            value={lookupPhone}
-            onChange={(event) => setLookupPhone(event.target.value)}
-            placeholder="Teléfono (solo si el taller creó la orden)"
-          />
-          <button type="submit" className="primary-button">Consultar estado</button>
+          {!clientPhone && (
+            <input
+              type="tel"
+              maxLength="30"
+              aria-label="Teléfono registrado en la orden"
+              value={lookupPhone}
+              disabled={isLookingUp}
+              onChange={(event) => setLookupPhone(event.target.value)}
+              placeholder="Teléfono (solo si el taller creó la orden)"
+            />
+          )}
+          <button type="submit" className="primary-button" disabled={isLookingUp}>
+            {isLookingUp ? "Buscando orden…" : "Consultar estado"}
+          </button>
         </form>
         {result && (
           <div className="result">
@@ -2081,9 +2271,18 @@ function ClientView({
                 Reenviar constancia a {result.contactEmail}
               </button>
             )}
+            {clientPhone && onWhatsApp && (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => onWhatsApp(result)}
+              >
+                Reenviar código por WhatsApp
+              </button>
+            )}
           </div>
         )}
-        {result === null && (
+        {result === null && !isLookingUp && (
           <div className="client-benefits" aria-label="Información de consulta">
             <span>Seguimiento en línea</span>
             <span>Información actualizada</span>
@@ -2091,7 +2290,7 @@ function ClientView({
           </div>
         )}
         {result === false && (
-          <p className="error" role="alert">No encontramos una orden con esos datos. Revisa el código y, si el taller creó la orden, escribe también el teléfono registrado.</p>
+          <p className="error" role="alert">{lookupError || "No encontramos una orden con esos datos. Revisa el código y, si el taller creó la orden, escribe también el teléfono registrado."}</p>
         )}
         </div>
       </div>

@@ -37,6 +37,7 @@ export function createSessionToken(account, secret, now = Date.now()) {
   const payload = Buffer.from(JSON.stringify({
     email: account.email,
     role: account.role,
+    ...(account.phone ? { phone: account.phone } : {}),
     exp: Math.floor(now / 1000) + TOKEN_TTL_SECONDS,
   })).toString("base64url");
   const signature = createHmac("sha256", secret).update(payload).digest("base64url");
@@ -61,7 +62,11 @@ export function verifySessionToken(token, secret, now = Date.now()) {
         !["admin", "client"].includes(session.role) ||
         !Number.isInteger(session.exp) ||
         session.exp <= Math.floor(now / 1000)) return null;
-    return { email: session.email, role: session.role };
+    return {
+      email: session.email,
+      role: session.role,
+      ...(typeof session.phone === "string" ? { phone: session.phone } : {}),
+    };
   } catch {
     return null;
   }
