@@ -37,10 +37,11 @@ npm run dev
 curl http://localhost:3001/health        # {"status":"ok"}
 ```
 
-Las cuentas, órdenes, ajustes e inventario web se almacenan en PostgreSQL. La
-aplicación Electron sigue usando SQLite local. La creación de cuentas públicas
-solo permite el rol de cliente; el administrador se inicializa con las variables
-de entorno anteriores.
+Las cuentas, órdenes, ajustes e inventario web se almacenan en PostgreSQL. Las
+versiones Electron de escritorio también usan esta API compartida cuando se
+compilan con `VITE_API_URL`; no deben conectarse directamente a PostgreSQL. La
+creación pública de cuentas solo permite el rol de cliente; el administrador se
+inicializa con las variables de entorno anteriores.
 
 Para que la app de escritorio lo use en esa misma PC:
 
@@ -58,7 +59,7 @@ $env:NOTIFY_URL="http://localhost:3001"; $env:NOTIFY_API_KEY="la-clave"; npm sta
 | `BUSINESS_*` | Nombre, teléfono, correo, dirección, horario y tiempo de respuesta que salen en el correo. |
 | `TRUST_PROXY` | `true` solo si hay nginx/Caddy delante; así los límites por IP usan la IP real. |
 | `RATE_LIMIT_IP_PER_HOUR` / `RATE_LIMIT_EMAIL_PER_HOUR` | Límites anti-abuso (30 y 5 por defecto). |
-| `ALLOWED_ORIGINS` | Solo para la versión web; la app Electron no lo necesita. |
+| `ALLOWED_ORIGINS` | Orígenes web autorizados; agrega también `null` para las apps Electron empaquetadas (`file://`). |
 | `MAIL_DRY_RUN` | `true` = no envía, solo registra. |
 | `WHATSAPP_ACCESS_TOKEN` | Token privado de Meta para WhatsApp Cloud API. |
 | `WHATSAPP_PHONE_NUMBER_ID` | ID del número emisor de WhatsApp Business, no el número telefónico. |
@@ -85,8 +86,10 @@ con **Root Directory** `server`.
    `VITE_APP_MODE=full` ya está guardado en `.env.web`; si Render solicita
    variables de entorno, también puedes configurarlo explícitamente.
 5. Copia la URL pública del Static Site y configúrala como `ALLOWED_ORIGINS` en
-   el Web Service. Si luego cambia, actualiza el valor y vuelve a desplegar ambos
-   recursos.
+   el Web Service y añade `null` para permitir la app Electron empaquetada.
+   Separa ambos valores con coma, sin comillas (por ejemplo,
+   `https://tu-sitio.onrender.com,null`). Si cambia la URL, actualiza el valor y
+   vuelve a desplegar ambos recursos.
 6. En Meta Business configura WhatsApp Cloud API y crea/aprueba dos plantillas
    en español: una plantilla **Authentication/OTP** para el código de acceso,
    con botón de copiar código, y una plantilla **Utility** para el código de
@@ -121,9 +124,14 @@ La contraseña `ADMIN_PASSWORD` no se restablece cambiando la variable una vez
 creada la cuenta. Para cambiarla se debe añadir un flujo de cambio de contraseña
 autenticado antes de operar con cuentas reales.
 
-El modo web almacena datos en la base PostgreSQL compartida; el modo Electron
-mantiene sus datos en SQLite locales y **no los sincroniza ni los migra
-automáticamente** a PostgreSQL.
+El modo web y las versiones Electron compiladas con `VITE_API_URL` almacenan
+cuentas, órdenes, ajustes e inventario en la misma base PostgreSQL. Los
+instaladores Electron existentes y las bases SQLite de cada computadora no se
+migran automáticamente. Antes de reemplazar un instalador local, conserva
+`taller-digital.db` (incluidos sus archivos `-wal` y `-shm` si existen) desde la
+carpeta de datos de la aplicación; no borres la copia original hasta verificar
+el respaldo. La app empaquetada accede al backend por HTTPS y el servidor debe
+tener `null` en `ALLOWED_ORIGINS` para permitir las solicitudes desde `file://`.
 
 ## Docker y PM2
 
