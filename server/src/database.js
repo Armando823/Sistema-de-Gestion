@@ -1,13 +1,12 @@
 import pg from "pg";
 import { normalizePhone } from "./phone.js";
-import { createPostgresSslConfig } from "./postgresTls.js";
+import { createPostgresPoolOptions } from "./postgresTls.js";
 
 const { Pool } = pg;
 
 export function createDatabase(connectionString, { production = false, sslCa } = {}) {
   const pool = new Pool({
-    connectionString,
-    ssl: createPostgresSslConfig({ production, ca: sslCa }),
+    ...createPostgresPoolOptions(connectionString, { production, ca: sslCa }),
     max: 5,
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 30_000,

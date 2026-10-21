@@ -5,7 +5,7 @@ import { createApp } from "../src/app.js";
 import { sendWithRetry } from "../src/mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "../src/receiptEmail.js";
 import { createRateLimiter } from "../src/rateLimiter.js";
-import { createPostgresSslConfig } from "../src/postgresTls.js";
+import { createPostgresPoolOptions, createPostgresSslConfig } from "../src/postgresTls.js";
 import { createSessionToken, hashPassword } from "../src/auth.js";
 import { createWhatsApp } from "../src/whatsapp.js";
 
@@ -74,6 +74,16 @@ test("TLS PostgreSQL valida certificados en producción y admite CA PEM configur
     rejectUnauthorized: true,
     ca,
   });
+  const poolOptions = createPostgresPoolOptions(
+    "postgres://user:pass@db.example/app?sslmode=no-verify&application_name=taller",
+    { production: true, ca },
+  );
+  assert.equal(poolOptions.connectionString, "postgres://user:pass@db.example/app?application_name=taller");
+  assert.deepEqual(poolOptions.ssl, { rejectUnauthorized: true, ca });
+  assert.equal(
+    createPostgresPoolOptions("postgres://localhost/app?sslmode=disable", { production: false }).connectionString,
+    "postgres://localhost/app?sslmode=disable",
+  );
   assert.equal(loadConfig({ DATABASE_SSL_CA: ca.replaceAll("\n", "\\n"), MAIL_DRY_RUN: "true" }).databaseSslCa, ca);
   assert.throws(() => loadConfig({ DATABASE_SSL_CA: "certificado inválido", MAIL_DRY_RUN: "true" }), /DATABASE_SSL_CA/);
 });
