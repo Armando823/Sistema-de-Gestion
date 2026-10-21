@@ -42,12 +42,12 @@ npm run dev
 - Panel de administrador para crear ordenes de reparacion.
 - Busqueda por codigo, cliente o equipo.
 - Actualizacion del estado de cada orden.
-- En la web desplegada, los clientes ingresan con el celular verificado por un
-  código temporal de WhatsApp; Electron conserva el acceso local con correo y
-  contraseña.
+- En la web publicada, los clientes ingresan con el celular verificado por un
+  código temporal de WhatsApp; Electron conserva el acceso local.
 - El cliente puede crear solicitudes y consultar sus reparaciones después de iniciar sesión.
 - El administrador gestiona las solicitudes y agrega las fotos de recepción desde el panel.
-- Persistencia local en SQLite desde Electron.
+- Persistencia local en SQLite desde Electron y compartida en PostgreSQL para
+  la web publicada.
 - Validación básica del alta de órdenes.
 - Generación de códigos consecutivos para nuevas órdenes.
 - El rol técnico está desactivado temporalmente; se habilitará en una versión posterior.
@@ -78,44 +78,28 @@ La base contiene las tablas `accounts`, `sessions`, `settings`, `inventory` y
 `repairs`. El renderer no tiene acceso directo al sistema de archivos ni a
 SQLite: todas las operaciones pasan por `preload.js` y canales IPC.
 
-Al ejecutar Vite directamente, `dbService.js` conserva un fallback en el
-navegador para facilitar el desarrollo. Para cuentas y datos compartidos en una
-web desplegada, configura `VITE_API_URL` y consulta
+Las compilaciones de escritorio `admin` y `client` usan SQLite local. La web
+publicada usa la API y PostgreSQL del servidor; configura `VITE_API_URL` en el
+Static Site de Render y consulta
 [`server/README.md`](server/README.md): se necesitan PostgreSQL, el Web Service
 de la API y un Static Site para React. El primer administrador se inicializa
 mediante variables privadas del servidor.
 
 ## Acceso y contraseñas
 
-- **Administrador (jefe):** la primera vez que se abre la versión `admin`, la app
-  pide crear la contraseña (usuario `admin`, mínimo 8 caracteres). Se guarda
-  cifrada con scrypt y sal aleatoria en la base de datos local; no hay
-  credenciales escritas en el código ni en los instaladores.
-- Tras 5 intentos fallidos el acceso se bloquea 30 segundos.
-- Solo con `npm run dev` (navegador, sin Electron) existe un acceso de prueba
-  `admin` / `Admin123`; Vite lo elimina de todas las compilaciones de producción.
-
-**Si el jefe olvida su contraseña:** cierra la app y borra la fila
-`admin_credential` de la tabla `settings` en `taller-digital.db` (carpeta de
-datos de la app en `%APPDATA%`), por ejemplo con
-`sqlite3 taller-digital.db "DELETE FROM settings WHERE key='admin_credential';"`.
-Al abrir otra vez pedirá crear una contraseña nueva; las órdenes no se pierden.
-
-- **Cliente en Electron:** se registra con correo y contraseña; las nuevas
-  contraseñas se almacenan con PBKDF2 y sal aleatoria; las cuentas anteriores
-  con SHA-256 se actualizan al iniciar sesión.
+- **Administrador web:** ingresa con el correo y contraseña de administrador
+  configurados para el servidor.
+- **Administrador Electron:** usa la contraseña local de esa computadora.
 - **Cliente web:** ingresa con su celular en formato internacional y confirma el
   código de seis dígitos que se envía a su WhatsApp. Requiere configurar Meta
   WhatsApp Cloud API y aprobar las plantillas descritas en
   [`server/README.md`](server/README.md).
-- En Electron, la sesión de cliente se conserva solo mientras la ventana está
-  abierta. En la web, el servidor emite sesiones firmadas con duración de 12 horas.
+- **Cliente Electron:** mantiene cuentas locales en esa computadora.
+- Las sesiones de la web las firma el servidor y duran 12 horas.
 
-Electron mantiene cuentas y datos locales a cada instalación; sus bases SQLite
-no se sincronizan ni se migran automáticamente a PostgreSQL. En la web
-desplegada, PostgreSQL comparte la información y el servidor limita el acceso
-por rol y propiedad de las órdenes. El modo web de desarrollo sin
-`VITE_API_URL` conserva `localStorage` local.
+La web publicada comparte las cuentas, órdenes, ajustes e inventario mediante
+PostgreSQL. Electron conserva sus propios datos SQLite en cada computadora;
+ambos modos no se sincronizan ni importan datos automáticamente.
 
 Consulta [`SECURITY.md`](SECURITY.md) para las limitaciones de seguridad y cómo
 reportar una vulnerabilidad.
@@ -162,7 +146,6 @@ cada push mediante `.github/workflows/ci.yml`.
 6. Desde el panel del administrador puedes cambiar el estado y agregar las fotos de recepción.
 7. El cliente puede consultar sus órdenes con el código generado.
 
-En el modo web de desarrollo, los datos se guardan en el `localStorage` del
-navegador actual. La aplicación de escritorio Electron usa SQLite local en la
-carpeta de datos del usuario. Ninguno de los dos modos sincroniza información con
-otros equipos; borrar los datos del sitio elimina los datos web guardados.
+En el modo web de desarrollo sin `VITE_API_URL`, los datos se guardan en el
+`localStorage` del navegador actual. La web publicada usa PostgreSQL; Electron
+usa SQLite local en la carpeta de datos de usuario.

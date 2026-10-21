@@ -1,19 +1,22 @@
 import pg from "pg";
+import { normalizePhone } from "./phone.js";
+import { createPostgresPoolOptions } from "./postgresTls.js";
 
 const { Pool } = pg;
 
-export function createDatabase(connectionString) {
+export function createDatabase(connectionString, { production = false, sslCa } = {}) {
   const pool = new Pool({
-    connectionString,
-    ssl: process.env.NODE_ENV === "production"
-      ? { rejectUnauthorized: false }
-      : undefined,
+    ...createPostgresPoolOptions(connectionString, { production, ca: sslCa }),
     max: 5,
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 30_000,
   });
 
   return {
+    async checkHealth() {
+      await pool.query("SELECT 1");
+    },
+
     async initialize({ adminEmail, adminPassword, hashPassword }) {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS accounts (
@@ -181,7 +184,9 @@ export function createDatabase(connectionString) {
           `UPDATE repairs
            SET owner_phone = $1
            WHERE owner_phone IS NULL
-             AND right(regexp_replace(phone, '\\D', '', 'g'), 10) = right(regexp_replace($1, '\\D', '', 'g'), 10)`,
+             AND owner_email IS NULL
+             AND phone ~ '^\\s*\\+[1-9]'
+             AND regexp_replace(phone, '\\D', '', 'g') = regexp_replace($1, '\\D', '', 'g')`,
           [phone],
         );
         await client.query("COMMIT");
@@ -195,12 +200,16 @@ export function createDatabase(connectionString) {
     },
 
     async listRepairs(account) {
+      const phoneOwner = `owner_email IS NULL
+        AND owner_phone = $2
+        AND phone ~ '^\\s*\\+[1-9]'
+        AND regexp_replace(phone, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')`;
       const result = account.role === "admin"
         ? await pool.query("SELECT * FROM repairs ORDER BY id")
         : account.phone
           ? await pool.query(
               `SELECT * FROM repairs
-               WHERE owner_email = $1 OR owner_phone = $2
+               WHERE owner_email = $1 OR (${phoneOwner})
                ORDER BY id`,
               [account.email, account.phone],
             )
@@ -234,7 +243,7 @@ export function createDatabase(connectionString) {
             (id, customer, phone, device, problem, status, updated, created_at, owner_email,
                owner_phone, authorized_by, signature, photos, contact_email, whatsapp_opt_in)
           VALUES
-              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15)
+              ($1,$2,$3,$4,$5,CASE WHEN $16 = 'admin' THEN $6 ELSE 'Recibido' END,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15)
           ON CONFLICT (id) DO UPDATE SET
             customer=EXCLUDED.customer, phone=EXCLUDED.phone, device=EXCLUDED.device,
             problem=EXCLUDED.problem, status=EXCLUDED.status, updated=EXCLUDED.updated,
@@ -321,13 +330,10 @@ export function createDatabase(connectionString) {
         "SELECT * FROM repairs WHERE id = $1 AND owner_email IS NULL",
         [id],
       );
-      const digits = (value) => String(value).replace(/\D/g, "");
-      const storedPhone = digits(result.rows[0]?.phone);
-      const requestedPhone = digits(phone);
-      const comparableDigits = Math.min(storedPhone.length, requestedPhone.length, 10);
-      if (comparableDigits < 7 ||
-          storedPhone.slice(-comparableDigits) !== requestedPhone.slice(-comparableDigits)) return null;
       const row = result.rows[0];
+      const storedPhone = normalizePhone(row?.phone);
+      const requestedPhone = normalizePhone(phone);
+      if (!storedPhone || storedPhone !== requestedPhone) return null;
       return {
         id: row.id,
         customer: row.customer,

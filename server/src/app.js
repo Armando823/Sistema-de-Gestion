@@ -4,15 +4,9 @@ import { createRateLimiter } from "./rateLimiter.js";
 import { sendWithRetry } from "./mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "./receiptEmail.js";
 import { createSessionToken, hashPassword, normalizeEmail, validateCredentials, verifyPassword, verifySessionToken } from "./auth.js";
+import { normalizePhone } from "./phone.js";
 
 const HOUR = 60 * 60 * 1000;
-const PHONE_PATTERN = /^\+[1-9]\d{7,14}$/;
-
-function normalizePhone(value) {
-  if (typeof value !== "string") return "";
-  const phone = value.replace(/[\s().-]/g, "");
-  return PHONE_PATTERN.test(phone) ? phone : "";
-}
 
 function hashPhoneCode(phone, code, secret) {
   return createHmac("sha256", secret).update(`${phone}:${code}`).digest("hex");
@@ -42,24 +36,37 @@ class HttpError extends Error {
 
 function readBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    req.on("error", fail);
+
     const declared = Number(req.headers["content-length"]);
     if (Number.isFinite(declared) && declared > maxBytes) {
-      reject(new HttpError(413, "La petición es demasiado grande."));
+      req.resume();
+      fail(new HttpError(413, "La petición es demasiado grande."));
       return;
     }
     const chunks = [];
     let size = 0;
     req.on("data", (chunk) => {
+      if (settled) return;
       size += chunk.length;
       if (size > maxBytes) {
-        reject(new HttpError(413, "La petición es demasiado grande."));
-        req.destroy();
+        chunks.length = 0;
+        fail(new HttpError(413, "La petición es demasiado grande."));
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    });
   });
 }
 
@@ -273,7 +280,10 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       if (body.repairs.some((repair) => !isValidRepair(repair))) {
         throw new HttpError(422, "Hay órdenes inválidas en la lista.");
       }
-      await database.saveRepairs(session, body.repairs);
+      const repairs = session.role === "admin"
+        ? body.repairs
+        : body.repairs.map((repair) => ({ ...repair, status: "Recibido" }));
+      await database.saveRepairs(session, repairs);
       send(res, 200, { ok: true }, cors);
       return;
     }
@@ -379,7 +389,8 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     if (session.role === "admin") {
       destination = normalizePhone(repair.phone);
     } else if (session.phone &&
-      (repair.owner_phone === session.phone || repair.owner_email === session.email)) {
+      (repair.owner_email === session.email ||
+        (!repair.owner_email && repair.owner_phone === session.phone && normalizePhone(repair.phone) === session.phone))) {
       destination = session.phone;
     } else {
       throw new HttpError(403, "No tienes permisos para enviar este código.");
@@ -404,8 +415,9 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       throw new HttpError(429, "Demasiadas solicitudes. Intenta más tarde.", { "Retry-After": String(ipCheck.retryAfterSec) });
     }
 
-    const authorizedWithSession = Boolean(getSession(req));
-    if (config.apiKey && !sameSecret(req.headers["x-api-key"], config.apiKey) && !authorizedWithSession) {
+    const session = getSession(req);
+    const authorizedWithApiKey = config.apiKey && sameSecret(req.headers["x-api-key"], config.apiKey);
+    if (config.apiKey && !authorizedWithApiKey && !session) {
       throw new HttpError(401, "No autorizado.");
     }
     if (!String(req.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
@@ -417,21 +429,53 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     const parsed = parseReceiptRequest(body);
     if (!parsed.ok) throw new HttpError(422, parsed.error);
 
-    const emailCheck = emailLimiter.take(parsed.value.email.toLowerCase());
+    let receipt = parsed.value;
+    if (session) {
+      requireDatabase();
+      const stored = await database.getRepairById(parsed.value.repair.id);
+      const isOwner = stored && (
+        session.role === "admin" ||
+        stored.owner_email === session.email ||
+        (!stored.owner_email && session.phone && stored.owner_phone === session.phone)
+      );
+      if (!isOwner) throw new HttpError(403, "No tienes permisos para enviar esta constancia.");
+      const savedEmail = typeof stored.contact_email === "string" ? stored.contact_email.trim() : "";
+      if (!savedEmail || normalizeEmail(parsed.value.email) !== normalizeEmail(savedEmail)) {
+        throw new HttpError(403, "El correo no coincide con el registrado en la orden.");
+      }
+      const savedReceipt = parseReceiptRequest({
+        email: savedEmail,
+        repair: {
+          id: stored.id,
+          customer: stored.customer,
+          phone: stored.phone,
+          device: stored.device,
+          problem: stored.problem,
+          status: stored.status,
+          authorizedBy: stored.authorized_by || "",
+          updated: stored.updated || "",
+          signature: stored.signature || "",
+        },
+      });
+      if (!savedReceipt.ok) throw new HttpError(422, savedReceipt.error);
+      receipt = savedReceipt.value;
+    }
+
+    const emailCheck = emailLimiter.take(receipt.email.toLowerCase());
     if (!emailCheck.allowed) {
       throw new HttpError(429, "Ya se enviaron varios correos a esta dirección. Intenta más tarde.", {
         "Retry-After": String(emailCheck.retryAfterSec),
       });
     }
 
-    const message = buildReceiptEmail(parsed.value, config.business);
+    const message = buildReceiptEmail(receipt, config.business);
     try {
       await sendWithRetry(mailer, message, { log, sleep });
     } catch (error) {
-      log.error(`No se pudo enviar ${parsed.value.repair.id} a ${maskEmail(parsed.value.email)}: ${error?.message || error}`);
+      log.error(`No se pudo enviar ${receipt.repair.id} a ${maskEmail(receipt.email)}: ${error?.message || error}`);
       throw new HttpError(502, "No se pudo enviar el correo. Intenta de nuevo en unos minutos.");
     }
-    log.info(`Constancia ${parsed.value.repair.id} enviada a ${maskEmail(parsed.value.email)}`);
+    log.info(`Constancia ${receipt.repair.id} enviada a ${maskEmail(receipt.email)}`);
     send(res, 200, { ok: true }, cors);
   }
 
@@ -443,6 +487,20 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       if (req.method === "OPTIONS") {
         res.writeHead(204, cors);
         res.end();
+        return;
+      }
+      if (req.method === "GET" && pathname === "/ready") {
+        if (!database) {
+          send(res, 503, { status: "unavailable", dependency: "database" });
+          return;
+        }
+        try {
+          await database.checkHealth();
+          send(res, 200, { status: "ok" });
+        } catch (error) {
+          log.warn(`La base de datos no está disponible: ${error?.message || error}`);
+          send(res, 503, { status: "unavailable", dependency: "database" });
+        }
         return;
       }
       if (req.method === "GET" && pathname === "/health") {
