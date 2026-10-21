@@ -17,7 +17,7 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
   const database = createDatabase(connectionString);
   const firstId = randomInt(10_000_000, 99_999_994);
   const ids = Array.from({ length: 6 }, (_, index) => `REP-${firstId + index}`);
-  const adminEmail = `integration-${firstId}@example.invalid`;
+  const adminEmail = `integration-admin-${firstId}@example.invalid`;
   const phone = `+57${randomInt(300_000_000, 399_999_999)}`;
   const phoneEmail = `whatsapp-${phone.replace(/\D/g, "")}@phone.invalid`;
   let initialized = false;
@@ -77,7 +77,7 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
     (await database.listRepairs(account)).map(({ id }) => id).sort(),
     [ids[0]],
   );
-  assert.equal(await database.lookupRepair(ids[0], "+57 300 123 4567") !== null, true);
+  assert.equal(await database.lookupRepair(ids[0], phone) !== null, true);
   assert.equal(await database.lookupRepair(ids[1], phone), null);
   assert.equal(await database.lookupRepair(ids[2], phone), null);
 
