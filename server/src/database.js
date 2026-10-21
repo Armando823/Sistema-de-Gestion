@@ -1,15 +1,8 @@
 import pg from "pg";
 import { normalizePhone } from "./phone.js";
+import { createPostgresSslConfig } from "./postgresTls.js";
 
 const { Pool } = pg;
-
-export function createPostgresSslConfig({ production, ca }) {
-  if (!production) return undefined;
-  return {
-    rejectUnauthorized: true,
-    ...(ca ? { ca } : {}),
-  };
-}
 
 export function createDatabase(connectionString, { production = false, sslCa } = {}) {
   const pool = new Pool({
@@ -21,6 +14,10 @@ export function createDatabase(connectionString, { production = false, sslCa } =
   });
 
   return {
+    async checkHealth() {
+      await pool.query("SELECT 1");
+    },
+
     async initialize({ adminEmail, adminPassword, hashPassword }) {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS accounts (

@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomInt } from "node:crypto";
+import pg from "pg";
 import { createDatabase } from "../src/database.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
+const { Pool } = pg;
 
 test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   skip: !connectionString,
@@ -16,13 +18,36 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
   const firstId = randomInt(10_000_000, 99_999_994);
   const ids = Array.from({ length: 6 }, (_, index) => `REP-${firstId + index}`);
   const adminEmail = `integration-${firstId}@example.invalid`;
+  const phone = `+57${randomInt(300_000_000, 399_999_999)}`;
+  const phoneEmail = `whatsapp-${phone.replace(/\D/g, "")}@phone.invalid`;
+  let initialized = false;
   let seeded = false;
+  let phoneAccountCreated = false;
 
   t.after(async () => {
-    if (seeded) {
-      for (const id of ids) await database.deleteRepair(id);
+    try {
+      if (initialized) {
+        const cleanup = new Pool({ connectionString });
+        try {
+          if (seeded) {
+            await cleanup.query("DELETE FROM repairs WHERE id = ANY($1::text[])", [ids]);
+          }
+          if (phoneAccountCreated) {
+            await cleanup.query("DELETE FROM phone_login_codes WHERE phone = $1", [phone]);
+            await cleanup.query(
+              "DELETE FROM accounts WHERE email = ANY($1::text[]) OR phone = $2",
+              [[adminEmail, phoneEmail], phone],
+            );
+          } else {
+            await cleanup.query("DELETE FROM accounts WHERE email = $1", [adminEmail]);
+          }
+        } finally {
+          await cleanup.end();
+        }
+      }
+    } finally {
+      await database.close();
     }
-    await database.close();
   });
 
   await database.initialize({
@@ -30,29 +55,31 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
     adminPassword: "integration-password",
     hashPassword: async () => "integration-hash",
   });
+  initialized = true;
 
   for (const id of ids) {
     assert.equal(await database.getRepairById(id), null, `el identificador ${id} ya existe en la base de pruebas`);
   }
 
   await database.saveRepairs({ email: adminEmail, role: "admin" }, [
-    { id: ids[0], customer: "Exact", phone: "+57 300 123 4567", device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
-    { id: ids[1], customer: "Suffix", phone: "+1 300 123 4567", device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
-    { id: ids[2], customer: "Legacy", phone: "300 123 4567", device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
-    { id: ids[3], customer: "Email-owned", phone: "+57 300 123 4567", device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy", ownerEmail: adminEmail },
-    { id: ids[5], customer: "Stale-link", phone: "+1 300 123 4567", device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy", ownerPhone: "+573001234567" },
+    { id: ids[0], customer: "Exact", phone, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
+    { id: ids[1], customer: "Suffix", phone: `+1 ${phone.slice(3)}`, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
+    { id: ids[2], customer: "Legacy", phone: phone.slice(3), device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
+    { id: ids[3], customer: "Email-owned", phone, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy", ownerEmail: adminEmail },
+    { id: ids[5], customer: "Stale-link", phone: `+1 ${phone.slice(3)}`, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy", ownerPhone: phone },
   ]);
   seeded = true;
 
-  const account = await database.getOrCreatePhoneAccount("+573001234567");
-  assert.equal(account.phone, "+573001234567");
+  const account = await database.getOrCreatePhoneAccount(phone);
+  phoneAccountCreated = true;
+  assert.equal(account.phone, phone);
   assert.deepEqual(
     (await database.listRepairs(account)).map(({ id }) => id).sort(),
     [ids[0]],
   );
   assert.equal(await database.lookupRepair(ids[0], "+57 300 123 4567") !== null, true);
-  assert.equal(await database.lookupRepair(ids[1], "+573001234567"), null);
-  assert.equal(await database.lookupRepair(ids[2], "+573001234567"), null);
+  assert.equal(await database.lookupRepair(ids[1], phone), null);
+  assert.equal(await database.lookupRepair(ids[2], phone), null);
 
   await database.saveRepairs(account, [
     { id: ids[4], customer: "Client-created", phone: account.phone, device: "Equipo", problem: "Falla", status: "Entregado", updated: "hoy" },

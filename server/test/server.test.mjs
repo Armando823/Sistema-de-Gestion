@@ -5,7 +5,7 @@ import { createApp } from "../src/app.js";
 import { sendWithRetry } from "../src/mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "../src/receiptEmail.js";
 import { createRateLimiter } from "../src/rateLimiter.js";
-import { createPostgresSslConfig } from "../src/database.js";
+import { createPostgresSslConfig } from "../src/postgresTls.js";
 import { createSessionToken, hashPassword } from "../src/auth.js";
 import { createWhatsApp } from "../src/whatsapp.js";
 
@@ -463,6 +463,58 @@ test("rechaza cuerpos demasiado grandes", async () => {
     assert.equal((await post(app.url, goodBody)).status, 413);
   } finally {
     await app.close();
+  }
+});
+
+test("responde 413 a cuerpos fragmentados que superan el límite", async () => {
+  const app = await start({ config: makeConfig({ limits: { perIpPerHour: 50, perEmailPerHour: 5, bodyBytes: 100 } }) });
+  try {
+    const response = await fetch(`${app.url}/api/notifications/receipt`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": "clave-de-prueba-123456",
+      },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(101));
+          controller.close();
+        },
+      }),
+      duplex: "half",
+    });
+    assert.equal(response.status, 413);
+    assert.deepEqual(await response.json(), { ok: false, error: "La petición es demasiado grande." });
+  } finally {
+    await app.close();
+  }
+});
+
+test("readiness comprueba PostgreSQL y conserva health como liveness", async () => {
+  const missingDatabase = await start();
+  try {
+    assert.equal((await fetch(`${missingDatabase.url}/health`)).status, 200);
+    assert.equal((await fetch(`${missingDatabase.url}/ready`)).status, 503);
+  } finally {
+    await missingDatabase.close();
+  }
+
+  const healthyDatabase = await start({ database: { async checkHealth() {} } });
+  try {
+    assert.equal((await fetch(`${healthyDatabase.url}/ready`)).status, 200);
+  } finally {
+    await healthyDatabase.close();
+  }
+
+  const unavailableDatabase = await start({
+    database: { async checkHealth() { throw new Error("connection refused"); } },
+  });
+  try {
+    const response = await fetch(`${unavailableDatabase.url}/ready`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { status: "unavailable", dependency: "database" });
+  } finally {
+    await unavailableDatabase.close();
   }
 });
 

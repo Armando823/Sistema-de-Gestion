@@ -36,24 +36,37 @@ class HttpError extends Error {
 
 function readBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    req.on("error", fail);
+
     const declared = Number(req.headers["content-length"]);
     if (Number.isFinite(declared) && declared > maxBytes) {
-      reject(new HttpError(413, "La petición es demasiado grande."));
+      req.resume();
+      fail(new HttpError(413, "La petición es demasiado grande."));
       return;
     }
     const chunks = [];
     let size = 0;
     req.on("data", (chunk) => {
+      if (settled) return;
       size += chunk.length;
       if (size > maxBytes) {
-        reject(new HttpError(413, "La petición es demasiado grande."));
-        req.destroy();
+        chunks.length = 0;
+        fail(new HttpError(413, "La petición es demasiado grande."));
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    });
   });
 }
 
@@ -474,6 +487,20 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       if (req.method === "OPTIONS") {
         res.writeHead(204, cors);
         res.end();
+        return;
+      }
+      if (req.method === "GET" && pathname === "/ready") {
+        if (!database) {
+          send(res, 503, { status: "unavailable", dependency: "database" });
+          return;
+        }
+        try {
+          await database.checkHealth();
+          send(res, 200, { status: "ok" });
+        } catch (error) {
+          log.warn(`La base de datos no está disponible: ${error?.message || error}`);
+          send(res, 503, { status: "unavailable", dependency: "database" });
+        }
         return;
       }
       if (req.method === "GET" && pathname === "/health") {

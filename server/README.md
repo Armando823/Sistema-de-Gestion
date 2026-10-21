@@ -58,6 +58,7 @@ $env:NOTIFY_URL="http://localhost:3001"; $env:NOTIFY_API_KEY="la-clave"; npm sta
 | `BUSINESS_*` | Nombre, teléfono, correo, dirección, horario y tiempo de respuesta que salen en el correo. |
 | `TRUST_PROXY` | `true` solo si hay nginx/Caddy delante; así los límites por IP usan la IP real. |
 | `RATE_LIMIT_IP_PER_HOUR` / `RATE_LIMIT_EMAIL_PER_HOUR` | Límites anti-abuso (30 y 5 por defecto). |
+| `DATABASE_SSL_CA` | CA PEM opcional de PostgreSQL. En producción siempre se valida el certificado TLS; define la CA si no es de confianza para Node.js. |
 | `ALLOWED_ORIGINS` | Orígenes web autorizados; la app Electron local no lo necesita. |
 | `MAIL_DRY_RUN` | `true` = no envía, solo registra. |
 | `WHATSAPP_ACCESS_TOKEN` | Token privado de Meta para WhatsApp Cloud API. |
@@ -73,7 +74,10 @@ y un Static Site para React. El Web Service que ya aloja `server/` puede seguir
 con **Root Directory** `server`.
 
 1. Crea una base **PostgreSQL** en Render. En el Web Service, añade `DATABASE_URL`
-   usando la URL interna de esa base.
+   usando la URL interna de esa base. La conexión TLS de producción valida el
+   certificado; si Render o tu proveedor entrega una CA que Node.js no reconoce,
+   configura `DATABASE_SSL_CA` con el certificado PEM (puedes representar saltos
+   de línea como `\n`).
 2. En el Web Service configura `NODE_ENV=production`, `SESSION_SECRET` (aleatorio,
    mínimo 32 caracteres), `ADMIN_EMAIL`, `ADMIN_PASSWORD` (mínimo 12 caracteres),
    y `NOTIFY_API_KEY` (mínimo 16 caracteres). Añade SMTP y pon
@@ -106,7 +110,9 @@ antes de enviar su código por WhatsApp; si Meta falla, permanece guardada y el
 cliente puede reenviar el código desde su consulta. Las reparaciones antiguas
 no se enviarán por WhatsApp hasta que se haya registrado autorización.
 Las órdenes antiguas se asocian al iniciar sesión si su teléfono coincide con
-el número verificado.
+el número verificado en formato E.164 completo. Se ignoran coincidencias por
+sufijos; órdenes históricas con teléfonos locales o sin prefijo internacional
+no se asocian ni consultan automáticamente hasta revisar y normalizar el número.
 
 Sin credenciales de Meta y plantillas aprobadas, el servidor puede desplegarse,
 pero no podrá enviar códigos ni completar el acceso de clientes web. El acceso
@@ -124,6 +130,16 @@ autenticado antes de operar con cuentas reales.
 Solo la web usa PostgreSQL compartido. Electron mantiene `taller-digital.db` en
 cada computadora; esos datos no se sincronizan ni migran automáticamente a
 PostgreSQL.
+
+Los límites anti-abuso se guardan en memoria y son por proceso. Mantén una sola
+instancia del Web Service para que los límites sean consistentes; antes de
+escalar a varias instancias, configura un limitador compartido (por ejemplo,
+Redis).
+
+Las pruebas de integración reales de PostgreSQL se ejecutan en CI. En local,
+solo ejecutes `npm run test:integration` con `TEST_DATABASE_URL` apuntando a una
+base local cuyo nombre termine en `_test`; el test rechaza hosts externos para
+evitar modificar datos de producción.
 
 ## Docker y PM2
 
