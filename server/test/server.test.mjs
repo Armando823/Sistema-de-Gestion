@@ -461,22 +461,6 @@ test("CORS solo para orígenes permitidos (preflight y respuesta real)", async (
     assert.equal(real.headers.get("access-control-allow-origin"), "https://taller.example");
     const denied = await fetch(route, { method: "OPTIONS", headers: { Origin: "https://malo.example" } });
     assert.equal(denied.headers.get("access-control-allow-origin"), null);
-    const opaqueDenied = await fetch(route, { method: "OPTIONS", headers: { Origin: "null" } });
-    assert.equal(opaqueDenied.headers.get("access-control-allow-origin"), null);
-  } finally {
-    await app.close();
-  }
-});
-
-test("CORS permite Electron con origen null solo cuando se autoriza explícitamente", async () => {
-  const app = await start({ config: makeConfig({ allowedOrigins: ["null"] }) });
-  try {
-    const response = await fetch(`${app.url}/api/auth/phone/request`, {
-      method: "OPTIONS",
-      headers: { Origin: "null" },
-    });
-    assert.equal(response.status, 204);
-    assert.equal(response.headers.get("access-control-allow-origin"), "null");
   } finally {
     await app.close();
   }

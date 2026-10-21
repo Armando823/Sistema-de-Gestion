@@ -42,12 +42,12 @@ npm run dev
 - Panel de administrador para crear ordenes de reparacion.
 - Busqueda por codigo, cliente o equipo.
 - Actualizacion del estado de cada orden.
-- En la web y en las aplicaciones Electron publicadas, los clientes ingresan
-  con el celular verificado por un código temporal de WhatsApp.
+- En la web publicada, los clientes ingresan con el celular verificado por un
+  código temporal de WhatsApp; Electron conserva el acceso local.
 - El cliente puede crear solicitudes y consultar sus reparaciones después de iniciar sesión.
 - El administrador gestiona las solicitudes y agrega las fotos de recepción desde el panel.
-- Persistencia compartida en PostgreSQL en versiones publicadas; SQLite se
-  conserva para las instalaciones antiguas y compilaciones sin API configurada.
+- Persistencia local en SQLite desde Electron y compartida en PostgreSQL para
+  la web publicada.
 - Validación básica del alta de órdenes.
 - Generación de códigos consecutivos para nuevas órdenes.
 - El rol técnico está desactivado temporalmente; se habilitará en una versión posterior.
@@ -78,35 +78,28 @@ La base contiene las tablas `accounts`, `sessions`, `settings`, `inventory` y
 `repairs`. El renderer no tiene acceso directo al sistema de archivos ni a
 SQLite: todas las operaciones pasan por `preload.js` y canales IPC.
 
-Las compilaciones de escritorio `admin` y `client` incluyen `VITE_API_URL` para
-usar la API y PostgreSQL compartidos. Las solicitudes pasan por el mismo
-backend autenticado que usa la web; no se conecta Electron directamente a
-PostgreSQL. En desarrollo sin `VITE_API_URL`, `dbService.js` conserva el
-almacenamiento local; una compilación de producción requiere la API compartida
-y no guarda datos en SQLite si falta la URL. Los instaladores se generan con
-`npm run dist:admin` y `npm run dist:client`. Para la web desplegada, configura también
-`VITE_API_URL` y consulta
+Las compilaciones de escritorio `admin` y `client` usan SQLite local. La web
+publicada usa la API y PostgreSQL del servidor; configura `VITE_API_URL` en el
+Static Site de Render y consulta
 [`server/README.md`](server/README.md): se necesitan PostgreSQL, el Web Service
 de la API y un Static Site para React. El primer administrador se inicializa
 mediante variables privadas del servidor.
 
 ## Acceso y contraseñas
 
-- **Administrador:** en las aplicaciones publicadas, ingresa con el correo y
-  contraseña de administrador configurados para el servidor; evita crear claves
-  locales distintas en cada PC.
-- **Cliente:** en web y en las aplicaciones publicadas de Electron, ingresa con
-  su celular en formato internacional y confirma el
+- **Administrador web:** ingresa con el correo y contraseña de administrador
+  configurados para el servidor.
+- **Administrador Electron:** usa la contraseña local de esa computadora.
+- **Cliente web:** ingresa con su celular en formato internacional y confirma el
   código de seis dígitos que se envía a su WhatsApp. Requiere configurar Meta
   WhatsApp Cloud API y aprobar las plantillas descritas en
   [`server/README.md`](server/README.md).
-- El servidor emite sesiones firmadas con duración de 12 horas.
+- **Cliente Electron:** mantiene cuentas locales en esa computadora.
+- Las sesiones de la web las firma el servidor y duran 12 horas.
 
-Las aplicaciones Electron publicadas y la web usan las mismas cuentas, órdenes,
-ajustes e inventario de PostgreSQL cuando se compilan con `VITE_API_URL`. Las
-bases SQLite existentes en cada PC no se importan automáticamente: conserva una
-copia antes de instalar la versión compartida. El servidor limita el acceso por
-rol y propiedad de las órdenes.
+La web publicada comparte las cuentas, órdenes, ajustes e inventario mediante
+PostgreSQL. Electron conserva sus propios datos SQLite en cada computadora;
+ambos modos no se sincronizan ni importan datos automáticamente.
 
 Consulta [`SECURITY.md`](SECURITY.md) para las limitaciones de seguridad y cómo
 reportar una vulnerabilidad.
@@ -154,6 +147,5 @@ cada push mediante `.github/workflows/ci.yml`.
 7. El cliente puede consultar sus órdenes con el código generado.
 
 En el modo web de desarrollo sin `VITE_API_URL`, los datos se guardan en el
-`localStorage` del navegador actual. Las compilaciones Electron sin esa variable
-usan SQLite local en la carpeta de datos del usuario. Las versiones publicadas
-configuradas con `VITE_API_URL` comparten los datos mediante PostgreSQL.
+`localStorage` del navegador actual. La web publicada usa PostgreSQL; Electron
+usa SQLite local en la carpeta de datos de usuario.

@@ -29,13 +29,14 @@ async function request(path, options = {}, authenticated = true) {
 
 export function usesSharedApi() {
   return shouldUseSharedApi({
+    isDesktop: Boolean(electronAPI),
     hasApiUrl: hasSharedApi,
     isProduction: import.meta.env?.PROD === true,
   });
 }
 
-export function shouldUseSharedApi({ hasApiUrl, isProduction }) {
-  return hasApiUrl || isProduction;
+export function shouldUseSharedApi({ isDesktop, hasApiUrl, isProduction }) {
+  return !isDesktop && (hasApiUrl || isProduction);
 }
 
 export async function loginSharedAccount(email, password) {
