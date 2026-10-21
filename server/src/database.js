@@ -204,12 +204,16 @@ export function createDatabase(connectionString, { production = false, sslCa } =
     },
 
     async listRepairs(account) {
+      const phoneOwner = `owner_email IS NULL
+        AND owner_phone = $2
+        AND phone ~ '^\\s*\\+[1-9]'
+        AND regexp_replace(phone, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')`;
       const result = account.role === "admin"
         ? await pool.query("SELECT * FROM repairs ORDER BY id")
         : account.phone
           ? await pool.query(
               `SELECT * FROM repairs
-               WHERE owner_email = $1 OR owner_phone = $2
+               WHERE owner_email = $1 OR (${phoneOwner})
                ORDER BY id`,
               [account.email, account.phone],
             )

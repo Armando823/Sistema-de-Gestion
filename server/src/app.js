@@ -376,7 +376,8 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     if (session.role === "admin") {
       destination = normalizePhone(repair.phone);
     } else if (session.phone &&
-      (repair.owner_phone === session.phone || repair.owner_email === session.email)) {
+      (repair.owner_email === session.email ||
+        (!repair.owner_email && repair.owner_phone === session.phone && normalizePhone(repair.phone) === session.phone))) {
       destination = session.phone;
     } else {
       throw new HttpError(403, "No tienes permisos para enviar este código.");
