@@ -3,6 +3,7 @@ const path = require("node:path");
 const Database = require("better-sqlite3");
 const { createAdminAuth } = require("./adminAuth");
 const { createNotifier, loadNotifyConfig } = require("./notifier");
+const { requireArray } = require("./dbInput");
 
 let database;
 let adminAuth;
@@ -112,6 +113,7 @@ function registerDatabaseHandlers() {
   });
 
   ipcMain.handle("db:repairs:save", (_event, repairs) => {
+    const items = requireArray(repairs, "Repairs");
     const db = getDatabase();
     const save = db.transaction((items) => {
       db.prepare("DELETE FROM repairs").run();
@@ -132,7 +134,7 @@ function registerDatabaseHandlers() {
         });
       }
     });
-    save(Array.isArray(repairs) ? repairs : []);
+    save(items);
     return true;
   });
 
@@ -207,6 +209,7 @@ function registerDatabaseHandlers() {
   );
 
   ipcMain.handle("db:inventory:save", (_event, items) => {
+    const inventory = requireArray(items, "Inventory");
     const db = getDatabase();
     const save = db.transaction((inventory) => {
       db.prepare("DELETE FROM inventory").run();
@@ -216,7 +219,7 @@ function registerDatabaseHandlers() {
       `);
       for (const item of inventory) insert.run(item);
     });
-    save(Array.isArray(items) ? items : []);
+    save(inventory);
     return true;
   });
 }

@@ -30,6 +30,7 @@ export function loadConfig(env = process.env) {
     port: toPort(env.PORT, 3001),
     apiKey: env.NOTIFY_API_KEY || "",
     databaseUrl: env.DATABASE_URL || "",
+    databaseSslCa: String(env.DATABASE_SSL_CA || "").replace(/\\n/g, "\n"),
     sessionSecret: env.SESSION_SECRET || "",
     adminEmail: env.ADMIN_EMAIL || "",
     adminPassword: env.ADMIN_PASSWORD || "",
@@ -81,6 +82,9 @@ export function loadConfig(env = process.env) {
   }
   if (Boolean(config.whatsapp.accessToken) !== Boolean(config.whatsapp.phoneNumberId)) {
     problems.push("WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID deben configurarse juntos.");
+  }
+  if (config.databaseSslCa && !/-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/.test(config.databaseSslCa)) {
+    problems.push("DATABASE_SSL_CA debe contener un certificado PEM válido.");
   }
   if (problems.length > 0) {
     throw new Error(`Configuración inválida:\n- ${problems.join("\n- ")}`);

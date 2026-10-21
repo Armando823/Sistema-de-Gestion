@@ -4,15 +4,9 @@ import { createRateLimiter } from "./rateLimiter.js";
 import { sendWithRetry } from "./mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "./receiptEmail.js";
 import { createSessionToken, hashPassword, normalizeEmail, validateCredentials, verifyPassword, verifySessionToken } from "./auth.js";
+import { normalizePhone } from "./phone.js";
 
 const HOUR = 60 * 60 * 1000;
-const PHONE_PATTERN = /^\+[1-9]\d{7,14}$/;
-
-function normalizePhone(value) {
-  if (typeof value !== "string") return "";
-  const phone = value.replace(/[\s().-]/g, "");
-  return PHONE_PATTERN.test(phone) ? phone : "";
-}
 
 function hashPhoneCode(phone, code, secret) {
   return createHmac("sha256", secret).update(`${phone}:${code}`).digest("hex");
@@ -273,7 +267,10 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       if (body.repairs.some((repair) => !isValidRepair(repair))) {
         throw new HttpError(422, "Hay órdenes inválidas en la lista.");
       }
-      await database.saveRepairs(session, body.repairs);
+      const repairs = session.role === "admin"
+        ? body.repairs
+        : body.repairs.map((repair) => ({ ...repair, status: "Recibido" }));
+      await database.saveRepairs(session, repairs);
       send(res, 200, { ok: true }, cors);
       return;
     }
@@ -404,8 +401,9 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       throw new HttpError(429, "Demasiadas solicitudes. Intenta más tarde.", { "Retry-After": String(ipCheck.retryAfterSec) });
     }
 
-    const authorizedWithSession = Boolean(getSession(req));
-    if (config.apiKey && !sameSecret(req.headers["x-api-key"], config.apiKey) && !authorizedWithSession) {
+    const session = getSession(req);
+    const authorizedWithApiKey = config.apiKey && sameSecret(req.headers["x-api-key"], config.apiKey);
+    if (config.apiKey && !authorizedWithApiKey && !session) {
       throw new HttpError(401, "No autorizado.");
     }
     if (!String(req.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
@@ -417,21 +415,53 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     const parsed = parseReceiptRequest(body);
     if (!parsed.ok) throw new HttpError(422, parsed.error);
 
-    const emailCheck = emailLimiter.take(parsed.value.email.toLowerCase());
+    let receipt = parsed.value;
+    if (session) {
+      requireDatabase();
+      const stored = await database.getRepairById(parsed.value.repair.id);
+      const isOwner = stored && (
+        session.role === "admin" ||
+        stored.owner_email === session.email ||
+        (!stored.owner_email && session.phone && stored.owner_phone === session.phone)
+      );
+      if (!isOwner) throw new HttpError(403, "No tienes permisos para enviar esta constancia.");
+      const savedEmail = typeof stored.contact_email === "string" ? stored.contact_email.trim() : "";
+      if (!savedEmail || normalizeEmail(parsed.value.email) !== normalizeEmail(savedEmail)) {
+        throw new HttpError(403, "El correo no coincide con el registrado en la orden.");
+      }
+      const savedReceipt = parseReceiptRequest({
+        email: savedEmail,
+        repair: {
+          id: stored.id,
+          customer: stored.customer,
+          phone: stored.phone,
+          device: stored.device,
+          problem: stored.problem,
+          status: stored.status,
+          authorizedBy: stored.authorized_by || "",
+          updated: stored.updated || "",
+          signature: stored.signature || "",
+        },
+      });
+      if (!savedReceipt.ok) throw new HttpError(422, savedReceipt.error);
+      receipt = savedReceipt.value;
+    }
+
+    const emailCheck = emailLimiter.take(receipt.email.toLowerCase());
     if (!emailCheck.allowed) {
       throw new HttpError(429, "Ya se enviaron varios correos a esta dirección. Intenta más tarde.", {
         "Retry-After": String(emailCheck.retryAfterSec),
       });
     }
 
-    const message = buildReceiptEmail(parsed.value, config.business);
+    const message = buildReceiptEmail(receipt, config.business);
     try {
       await sendWithRetry(mailer, message, { log, sleep });
     } catch (error) {
-      log.error(`No se pudo enviar ${parsed.value.repair.id} a ${maskEmail(parsed.value.email)}: ${error?.message || error}`);
+      log.error(`No se pudo enviar ${receipt.repair.id} a ${maskEmail(receipt.email)}: ${error?.message || error}`);
       throw new HttpError(502, "No se pudo enviar el correo. Intenta de nuevo en unos minutos.");
     }
-    log.info(`Constancia ${parsed.value.repair.id} enviada a ${maskEmail(parsed.value.email)}`);
+    log.info(`Constancia ${receipt.repair.id} enviada a ${maskEmail(receipt.email)}`);
     send(res, 200, { ok: true }, cors);
   }
 

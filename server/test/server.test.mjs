@@ -5,6 +5,7 @@ import { createApp } from "../src/app.js";
 import { sendWithRetry } from "../src/mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "../src/receiptEmail.js";
 import { createRateLimiter } from "../src/rateLimiter.js";
+import { createPostgresSslConfig } from "../src/database.js";
 import { createSessionToken, hashPassword } from "../src/auth.js";
 import { createWhatsApp } from "../src/whatsapp.js";
 
@@ -65,6 +66,18 @@ test("config: usa el puerto del entorno y valida su rango", () => {
   assert.throws(() => loadConfig({ PORT: "65536", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
 });
 
+test("TLS PostgreSQL valida certificados en producción y admite CA PEM configurada", () => {
+  const ca = "-----BEGIN CERTIFICATE-----\ncertificado\n-----END CERTIFICATE-----";
+  assert.equal(createPostgresSslConfig({ production: false }), undefined);
+  assert.deepEqual(createPostgresSslConfig({ production: true }), { rejectUnauthorized: true });
+  assert.deepEqual(createPostgresSslConfig({ production: true, ca }), {
+    rejectUnauthorized: true,
+    ca,
+  });
+  assert.equal(loadConfig({ DATABASE_SSL_CA: ca.replaceAll("\n", "\\n"), MAIL_DRY_RUN: "true" }).databaseSslCa, ca);
+  assert.throws(() => loadConfig({ DATABASE_SSL_CA: "certificado inválido", MAIL_DRY_RUN: "true" }), /DATABASE_SSL_CA/);
+});
+
 test("config y cliente Meta: requiere los secretos juntos y envía plantillas con el código en el cuerpo", async () => {
   assert.throws(
     () => loadConfig({ MAIL_DRY_RUN: "true", WHATSAPP_ACCESS_TOKEN: "token" }),
@@ -110,6 +123,7 @@ test("config y cliente Meta: requiere los secretos juntos y envía plantillas co
 
 test("API web: registro público crea clientes, el login emite sesión y protege recursos", async () => {
   const accounts = new Map();
+  const savedRepairs = [];
   let nextRepairNumber = 1000;
   accounts.set("admin@taller.com", {
     email: "admin@taller.com",
@@ -123,6 +137,7 @@ test("API web: registro público crea clientes, el login emite sesión y protege
     },
     async getAccount(email) { return accounts.get(email) || null; },
     async listRepairs() { return []; },
+    async saveRepairs(account, repairs) { savedRepairs.push({ account, repairs }); },
     async nextRepairId() {
       nextRepairNumber += 1;
       return `REP-${String(nextRepairNumber).padStart(4, "0")}`;
@@ -150,6 +165,16 @@ test("API web: registro público crea clientes, el login emite sesión y protege
     assert.equal(login.status, 200);
     const { token, account } = await login.json();
     assert.equal(account.role, "client");
+    const clientCreate = await fetch(`${app.url}/api/repairs`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ repairs: [{ ...repair, status: "Entregado" }] }),
+    });
+    assert.equal(clientCreate.status, 200);
+    assert.equal(savedRepairs[0].repairs[0].status, "Recibido");
     assert.equal((await fetch(`${app.url}/api/repairs`)).status, 401);
     const repairs = await fetch(`${app.url}/api/repairs`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -355,6 +380,52 @@ test("sin firma no se adjunta imagen", () => {
   const message = buildReceiptEmail(value, makeConfig().business);
   assert.ok(!message.html.includes("cid:firma-cliente"));
   assert.equal(message.attachments.length, 1);
+});
+
+test("una sesión solo envía constancias de su orden y correo guardados", async () => {
+  const config = makeConfig();
+  const stored = {
+    id: repair.id,
+    customer: "Ana Pérez",
+    phone: "+573001234567",
+    device: "Equipo registrado",
+    problem: "Falla registrada",
+    status: "En diagnóstico",
+    updated: "fecha registrada",
+    owner_email: "ana@correo.com",
+    owner_phone: null,
+    contact_email: "ana@correo.com",
+    signature: PNG,
+  };
+  const database = {
+    async getRepairById(id) { return id === stored.id ? stored : null; },
+  };
+  const app = await start({ config, database });
+  const sendAs = (email, body) => fetch(`${app.url}/api/notifications/receipt`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${createSessionToken({ email, role: "client" }, config.sessionSecret)}`,
+    },
+    body: JSON.stringify(body),
+  });
+  try {
+    assert.equal((await sendAs("otra@correo.com", goodBody)).status, 403);
+    assert.equal((await sendAs("ana@correo.com", { ...goodBody, email: "atacante@correo.com" })).status, 403);
+
+    const forged = {
+      ...goodBody,
+      repair: { ...repair, customer: "Nombre falsificado", problem: "Falla falsificada" },
+    };
+    const response = await sendAs("ana@correo.com", forged);
+    assert.equal(response.status, 200);
+    assert.equal(app.sent.length, 1);
+    assert.equal(app.sent[0].to, "ana@correo.com");
+    assert.match(app.sent[0].html, /Equipo registrado/);
+    assert.doesNotMatch(app.sent[0].html, /Nombre falsificado|Falla falsificada/);
+  } finally {
+    await app.close();
+  }
 });
 
 test("POST válido envía el correo y responde ok", async () => {

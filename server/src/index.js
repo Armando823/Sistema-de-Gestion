@@ -44,7 +44,10 @@ if (config.databaseUrl) {
     process.exit(1);
   }
   try {
-    database = createDatabase(config.databaseUrl);
+    database = createDatabase(config.databaseUrl, {
+      production: config.production,
+      sslCa: config.databaseSslCa,
+    });
     await database.initialize({
       adminEmail: config.adminEmail,
       adminPassword: config.adminPassword,
