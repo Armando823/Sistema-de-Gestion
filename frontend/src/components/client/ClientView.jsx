@@ -4,6 +4,7 @@ import { laptopCatalog } from "../../data/repairData";
 import { canClientView } from "../../utils/repairAccess";
 import { lookupSharedRepair } from "../../services/dbService";
 import { statusClass } from "../../utils/repairPresentation";
+import { isValidImageData } from "../../utils/repairValidation";
 
 export default function ClientView({
   repairs,
@@ -177,14 +178,14 @@ export default function ClientView({
                 <strong>{result.problem}</strong>
               </div>
             </div>
-            {result.photos?.length > 0 && (
+            {result.photos?.some(isValidImageData) && (
               <div className="client-photos">
                 <div className="section-label">
                   <strong>Fotos de recepción</strong>
-                  <span>{result.photos.length} archivo(s)</span>
+                  <span>{result.photos.filter(isValidImageData).length} archivo(s)</span>
                 </div>
                 <div className="photo-preview">
-                  {result.photos.map((photo, index) => (
+                  {result.photos.filter(isValidImageData).map((photo, index) => (
                     <img
                       key={photo}
                       src={photo}
