@@ -51,6 +51,7 @@ export function loadConfig(env = process.env) {
       perIpPerHour: toInt(env.RATE_LIMIT_IP_PER_HOUR, 30),
       perEmailPerHour: toInt(env.RATE_LIMIT_EMAIL_PER_HOUR, 5),
       bodyBytes: 3_500_000,
+      repairImportBytes: 12 * 1024 * 1024,
     },
     mail: {
       dryRun,

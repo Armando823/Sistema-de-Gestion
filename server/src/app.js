@@ -100,6 +100,56 @@ function isValidRepair(repair) {
   );
 }
 
+const repairBackupFields = new Set([
+  "id",
+  "customer",
+  "phone",
+  "device",
+  "problem",
+  "status",
+  "updated",
+  "createdAt",
+  "ownerEmail",
+  "ownerPhone",
+  "authorizedBy",
+  "signature",
+  "photos",
+  "contactEmail",
+  "whatsappOptIn",
+  "version",
+]);
+
+function isValidBackupEmail(value) {
+  return typeof value === "string" &&
+    value.length <= 254 &&
+    /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]+$/.test(value);
+}
+
+function normalizeBackupRepair(repair) {
+  if (!repair || typeof repair !== "object" || Array.isArray(repair) ||
+      Object.keys(repair).some((key) => !repairBackupFields.has(key)) ||
+      !isValidRepair(repair)) {
+    return null;
+  }
+  if (repair.version !== undefined &&
+      (!Number.isSafeInteger(repair.version) || repair.version < 1)) {
+    return null;
+  }
+  if (repair.createdAt !== undefined && repair.createdAt !== null &&
+      (typeof repair.createdAt !== "string" || repair.createdAt.length > 40)) {
+    return null;
+  }
+  if (repair.ownerEmail !== undefined && !isValidBackupEmail(repair.ownerEmail)) {
+    return null;
+  }
+  if (repair.ownerPhone !== undefined &&
+      (typeof repair.ownerPhone !== "string" || normalizePhone(repair.ownerPhone) !== repair.ownerPhone)) {
+    return null;
+  }
+  const { version, ...backupRepair } = repair;
+  return backupRepair;
+}
+
 function isValidWarrantyDate(value) {
   if (value === null) return true;
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -313,6 +363,22 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     }
     if (req.method === "GET" && pathname === "/api/repairs") {
       send(res, 200, { repairs: await database.listRepairs(session) }, cors);
+      return;
+    }
+    if (req.method === "POST" && pathname === "/api/repairs/import") {
+      const adminSession = requireAdmin(req);
+      const body = parseJson(await readBody(req, config.limits.repairImportBytes));
+      const repair = normalizeBackupRepair(body?.repair);
+      if (!repair) throw new HttpError(422, "La orden del respaldo no es válida.");
+      try {
+        const importedRepair = await database.createRepair(adminSession, repair);
+        send(res, 201, { repair: importedRepair }, cors);
+      } catch (error) {
+        if (["ER_DUP_ENTRY", "23505"].includes(error.code)) {
+          throw new HttpError(409, "La orden ya existe.");
+        }
+        throw error;
+      }
       return;
     }
     if (req.method === "POST" && pathname === "/api/repairs") {

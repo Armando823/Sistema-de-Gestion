@@ -24,17 +24,74 @@ import {
   readSetting,
   saveSetting,
   updateSharedRepair,
+  importSharedRepair,
 } from "./services/dbService";
 import { readImage } from "./utils/image";
 import { sendReceiptEmail } from "./services/notifyService";
 import {
   isValidRepair,
+  isValidEmail,
   isValidImageData,
   repairLimits,
   validateRepairForm,
 } from "./utils/repairValidation";
 
 const supportEmail = "soporte@tallerdigital.com";
+const backupFormat = "sistema-de-gestion.repair-backup";
+const backupRepairFields = new Set([
+  "id",
+  "customer",
+  "phone",
+  "device",
+  "problem",
+  "status",
+  "updated",
+  "createdAt",
+  "ownerEmail",
+  "ownerPhone",
+  "authorizedBy",
+  "signature",
+  "photos",
+  "contactEmail",
+  "whatsappOptIn",
+  "version",
+]);
+
+function isValidBackupRepair(repair) {
+  return Boolean(
+    repair &&
+    typeof repair === "object" &&
+    !Array.isArray(repair) &&
+    Object.keys(repair).every((key) => backupRepairFields.has(key)) &&
+    isValidRepair(repair) &&
+    (repair.version === undefined ||
+      (Number.isSafeInteger(repair.version) && repair.version >= 1)) &&
+    (repair.createdAt === undefined || repair.createdAt === null ||
+      (typeof repair.createdAt === "string" && repair.createdAt.length <= 40)) &&
+    (repair.ownerEmail === undefined || isValidEmail(repair.ownerEmail)) &&
+    (repair.ownerPhone === undefined ||
+      (typeof repair.ownerPhone === "string" && /^\+[1-9]\d{7,14}$/.test(repair.ownerPhone)))
+  );
+}
+
+function getBackupRepairs(data) {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== "object" || Array.isArray(data) ||
+      !Array.isArray(data.repairs)) return null;
+  if (data.format === backupFormat && data.version === 1 &&
+      Object.keys(data).every((key) =>
+        ["format", "version", "exportedAt", "repairs"].includes(key),
+      ) &&
+      typeof data.exportedAt === "string" &&
+      Number.isFinite(Date.parse(data.exportedAt))) {
+    return data.repairs;
+  }
+  if (data.format === undefined && data.version === undefined &&
+      Object.keys(data).every((key) => key === "repairs")) {
+    return data.repairs;
+  }
+  return null;
+}
 
 const defaultSettings = {
   businessName: "Taller Digital",
@@ -377,7 +434,13 @@ function App({ version = "Final" }) {
   }
 
   function exportRepairs() {
-    const blob = new Blob([JSON.stringify(repairs, null, 2)], {
+    const backup = {
+      format: backupFormat,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      repairs,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
       type: "application/json;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
@@ -386,7 +449,7 @@ function App({ version = "Final" }) {
     link.download = `ordenes-reparacion-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice("Copia de órdenes descargada");
+    setNotice("Respaldo completo descargado. Incluye datos personales, fotos y firmas; guárdalo de forma segura.");
   }
 
   async function importRepairs(event) {
@@ -399,36 +462,40 @@ function App({ version = "Final" }) {
     }
     try {
       const importedData = JSON.parse(await file.text());
-      const importedRepairs = Array.isArray(importedData)
-        ? importedData
-        : importedData?.repairs;
-      const validRepairs = Array.isArray(importedRepairs)
-        ? importedRepairs.filter(isValidRepair)
-        : [];
-      if (validRepairs.length === 0) {
-        setNotice("El archivo no contiene órdenes válidas");
+      const importedRepairs = getBackupRepairs(importedData);
+      if (!importedRepairs) {
+        setNotice("El formato del respaldo no es compatible.");
         return;
       }
-      // Se agregan solo las órdenes nuevas; las que ya existen no se pisan,
-      // así importar una copia nunca borra el trabajo actual.
+      let invalid = 0;
+      let duplicates = 0;
+      let failed = 0;
       const knownIds = new Set(repairs.map((repair) => repair.id));
       const added = [];
-      let failed = 0;
-      for (const repair of validRepairs) {
-        if (knownIds.has(repair.id)) continue;
+      for (const repair of importedRepairs) {
+        if (!isValidBackupRepair(repair)) {
+          invalid += 1;
+          continue;
+        }
+        if (knownIds.has(repair.id)) {
+          duplicates += 1;
+          continue;
+        }
         knownIds.add(repair.id);
         try {
-          added.push(await createSharedRepair(repair));
+          added.push(await importSharedRepair(repair));
         } catch (error) {
-          if (/existe|duplicate/i.test(error.message)) continue;
-          failed += 1;
+          if (error.status === 409) duplicates += 1;
+          else if (error.status === 422) invalid += 1;
+          else failed += 1;
         }
       }
-      setRepairs((current) => [...added, ...current]);
+      setRepairs((current) => {
+        const currentIds = new Set(current.map(({ id }) => id));
+        return [...added.filter(({ id }) => !currentIds.has(id)), ...current];
+      });
       setSearch("");
-      setNotice(
-        `${added.length} orden(es) agregada(s), ${validRepairs.length - added.length - failed} ya existían${failed ? `, ${failed} no se pudieron guardar` : ""}`,
-      );
+      setNotice(`${added.length} agregada(s), ${duplicates} duplicada(s), ${invalid} inválida(s), ${failed} fallida(s).`);
     } catch {
       setNotice("No se pudo leer el archivo de órdenes");
     } finally {
@@ -636,10 +703,10 @@ function App({ version = "Final" }) {
               className="text-button"
               onClick={exportRepairs}
             >
-              Exportar datos
+              Descargar respaldo
             </button>
             <label className="text-button import-label">
-              Importar datos
+              Restaurar respaldo
               <input
                 ref={importInputRef}
                 className="file-input"
