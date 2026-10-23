@@ -46,7 +46,7 @@ npm run dev
   código temporal de WhatsApp; Electron conserva el acceso local.
 - El cliente puede crear solicitudes y consultar sus reparaciones después de iniciar sesión.
 - El administrador gestiona las solicitudes y agrega las fotos de recepción desde el panel.
-- Persistencia local en SQLite desde Electron y compartida en PostgreSQL para
+- Persistencia local en SQLite desde Electron y compartida en MySQL para
   la web publicada.
 - Validación básica del alta de órdenes.
 - Generación de códigos consecutivos para nuevas órdenes.
@@ -79,9 +79,9 @@ La base contiene las tablas `accounts`, `sessions`, `settings`, `inventory` y
 SQLite: todas las operaciones pasan por `preload.js` y canales IPC.
 
 Las compilaciones de escritorio `admin` y `client` usan SQLite local. La web
-publicada usa la API y PostgreSQL del servidor; configura `VITE_API_URL` en el
+publicada usa la API y MySQL del servidor; configura `VITE_API_URL` en el
 Static Site de Render y consulta
-[`server/README.md`](server/README.md): se necesitan PostgreSQL, el Web Service
+[`server/README.md`](server/README.md): se necesitan MySQL, el Web Service
 de la API y un Static Site para React. El primer administrador se inicializa
 mediante variables privadas del servidor.
 
@@ -98,7 +98,7 @@ mediante variables privadas del servidor.
 - Las sesiones de la web las firma el servidor y duran 12 horas.
 
 La web publicada comparte las cuentas, órdenes, ajustes e inventario mediante
-PostgreSQL. Electron conserva sus propios datos SQLite en cada computadora;
+MySQL. Electron conserva sus propios datos SQLite en cada computadora;
 ambos modos no se sincronizan ni importan datos automáticamente.
 
 Consulta [`SECURITY.md`](SECURITY.md) para las limitaciones de seguridad y cómo
@@ -147,5 +147,5 @@ cada push mediante `.github/workflows/ci.yml`.
 7. El cliente puede consultar sus órdenes con el código generado.
 
 En el modo web de desarrollo sin `VITE_API_URL`, los datos se guardan en el
-`localStorage` del navegador actual. La web publicada usa PostgreSQL; Electron
+`localStorage` del navegador actual. La web publicada usa MySQL; Electron
 usa SQLite local en la carpeta de datos de usuario.

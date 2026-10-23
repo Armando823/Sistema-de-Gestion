@@ -1,19 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomInt } from "node:crypto";
-import pg from "pg";
+import mysql from "mysql2/promise";
 import { createDatabase } from "../src/database.js";
+import { createMySqlConnectionOptions } from "../src/mysqlConnection.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
-const { Pool } = pg;
 
-test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
+test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   skip: !connectionString,
 }, async (t) => {
   const testUrl = new URL(connectionString);
-  if (!["localhost", "127.0.0.1", "::1"].includes(testUrl.hostname) || !testUrl.pathname.endsWith("_test")) {
-    throw new Error("TEST_DATABASE_URL solo puede apuntar a PostgreSQL local cuyo nombre termine en _test.");
+  if (testUrl.protocol !== "mysql:" ||
+      !["localhost", "127.0.0.1", "[::1]"].includes(testUrl.hostname) ||
+      !testUrl.pathname.endsWith("_test")) {
+    throw new Error("TEST_DATABASE_URL solo puede apuntar a MySQL local cuyo nombre termine en _test.");
   }
+
+  const connectionOptions = createMySqlConnectionOptions(connectionString);
   const database = createDatabase(connectionString);
   const firstId = randomInt(10_000_000, 99_999_994);
   const ids = Array.from({ length: 6 }, (_, index) => `REP-${firstId + index}`);
@@ -21,25 +25,22 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
   const phone = `+57${randomInt(300_000_000, 399_999_999)}`;
   const phoneEmail = `whatsapp-${phone.replace(/\D/g, "")}@phone.invalid`;
   let initialized = false;
-  let seeded = false;
-  let phoneAccountCreated = false;
+  let originalCounter;
 
   t.after(async () => {
     try {
       if (initialized) {
-        const cleanup = new Pool({ connectionString });
+        const cleanup = mysql.createPool(connectionOptions);
         try {
-          if (seeded) {
-            await cleanup.query("DELETE FROM repairs WHERE id = ANY($1::text[])", [ids]);
-          }
-          if (phoneAccountCreated) {
-            await cleanup.query("DELETE FROM phone_login_codes WHERE phone = $1", [phone]);
-            await cleanup.query(
-              "DELETE FROM accounts WHERE email = ANY($1::text[]) OR phone = $2",
-              [[adminEmail, phoneEmail], phone],
-            );
-          } else {
-            await cleanup.query("DELETE FROM accounts WHERE email = $1", [adminEmail]);
+          const placeholders = ids.map(() => "?").join(", ");
+          await cleanup.execute(`DELETE FROM repairs WHERE id IN (${placeholders})`, ids);
+          await cleanup.execute("DELETE FROM phone_login_codes WHERE phone = ?", [phone]);
+          await cleanup.execute(
+            "DELETE FROM accounts WHERE email IN (?, ?) OR phone = ?",
+            [adminEmail, phoneEmail, phone],
+          );
+          if (originalCounter !== undefined) {
+            await cleanup.execute("UPDATE app_counters SET value = ? WHERE key_name = 'repair'", [originalCounter]);
           }
         } finally {
           await cleanup.end();
@@ -56,6 +57,15 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
     hashPassword: async () => "integration-hash",
   });
   initialized = true;
+  const counterReader = mysql.createPool(connectionOptions);
+  try {
+    const [counterRows] = await counterReader.execute(
+      "SELECT value FROM app_counters WHERE key_name = 'repair'",
+    );
+    originalCounter = Number(counterRows[0].value);
+  } finally {
+    await counterReader.end();
+  }
 
   for (const id of ids) {
     assert.equal(await database.getRepairById(id), null, `el identificador ${id} ya existe en la base de pruebas`);
@@ -68,10 +78,8 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
     { id: ids[3], customer: "Email-owned", phone, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy", ownerEmail: adminEmail },
     { id: ids[5], customer: "Stale-link", phone: `+1 ${phone.slice(3)}`, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy", ownerPhone: phone },
   ]);
-  seeded = true;
 
   const account = await database.getOrCreatePhoneAccount(phone);
-  phoneAccountCreated = true;
   assert.equal(account.phone, phone);
   assert.deepEqual(
     (await database.listRepairs(account)).map(({ id }) => id).sort(),
@@ -80,10 +88,15 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
   assert.equal(await database.lookupRepair(ids[0], phone) !== null, true);
   assert.equal(await database.lookupRepair(ids[1], phone), null);
   assert.equal(await database.lookupRepair(ids[2], phone), null);
+  assert.equal(await database.lookupRepair(ids[2], ""), null);
 
   await database.saveRepairs(account, [
     { id: ids[4], customer: "Client-created", phone: account.phone, device: "Equipo", problem: "Falla", status: "Entregado", updated: "hoy" },
   ]);
   const owned = await database.listRepairs(account);
   assert.equal(owned.find(({ id }) => id === ids[4])?.status, "Recibido");
+  assert.equal(
+    await database.nextRepairId(),
+    `REP-${String(firstId + 6).padStart(4, "0")}`,
+  );
 });

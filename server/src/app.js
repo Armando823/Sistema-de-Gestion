@@ -34,6 +34,10 @@ class HttpError extends Error {
   }
 }
 
+function isDuplicateKeyError(error) {
+  return error?.code === "ER_DUP_ENTRY";
+}
+
 function readBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -245,7 +249,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
         const passwordHash = await hashPassword(body.password);
         await database.createAccount(email, passwordHash);
       } catch (error) {
-        if (error.code === "23505") throw new HttpError(409, "Ya existe una cuenta con ese correo.");
+        if (isDuplicateKeyError(error)) throw new HttpError(409, "Ya existe una cuenta con ese correo.");
         throw error;
       }
       account = { email, role: "client" };
@@ -543,7 +547,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       } else {
         log.error(`Error inesperado: ${error?.stack || error}`);
         if (!res.headersSent) {
-          const status = error?.code === "23505" ? 409 : 500;
+          const status = isDuplicateKeyError(error) ? 409 : 500;
           send(res, status, { ok: false, error: status === 409 ? "El registro ya existe." : "Error interno." }, cors);
         }
       }

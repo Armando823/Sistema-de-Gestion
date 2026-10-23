@@ -5,7 +5,7 @@ import { createApp } from "../src/app.js";
 import { sendWithRetry } from "../src/mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "../src/receiptEmail.js";
 import { createRateLimiter } from "../src/rateLimiter.js";
-import { createPostgresPoolOptions, createPostgresSslConfig } from "../src/postgresTls.js";
+import { createMySqlConnectionOptions } from "../src/mysqlConnection.js";
 import { createSessionToken, hashPassword } from "../src/auth.js";
 import { createWhatsApp } from "../src/whatsapp.js";
 
@@ -66,26 +66,29 @@ test("config: usa el puerto del entorno y valida su rango", () => {
   assert.throws(() => loadConfig({ PORT: "65536", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
 });
 
-test("TLS PostgreSQL valida certificados en producción y admite CA PEM configurada", () => {
+test("MySQL connection URLs validate TLS certificates in production", () => {
   const ca = "-----BEGIN CERTIFICATE-----\ncertificado\n-----END CERTIFICATE-----";
-  assert.equal(createPostgresSslConfig({ production: false }), undefined);
-  assert.deepEqual(createPostgresSslConfig({ production: true }), { rejectUnauthorized: true });
-  assert.deepEqual(createPostgresSslConfig({ production: true, ca }), {
-    rejectUnauthorized: true,
-    ca,
-  });
-  const poolOptions = createPostgresPoolOptions(
-    "postgres://user:pass@db.example/app?sslmode=no-verify&application_name=taller",
-    { production: true, ca },
+  assert.deepEqual(
+    createMySqlConnectionOptions("mysql://taller:p%40ss@localhost:3307/taller_db"),
+    {
+      host: "localhost",
+      port: 3307,
+      user: "taller",
+      password: "p@ss",
+      database: "taller_db",
+    },
   );
-  assert.equal(poolOptions.connectionString, "postgres://user:pass@db.example/app?application_name=taller");
-  assert.deepEqual(poolOptions.ssl, { rejectUnauthorized: true, ca });
-  assert.equal(
-    createPostgresPoolOptions("postgres://localhost/app?sslmode=disable", { production: false }).connectionString,
-    "postgres://localhost/app?sslmode=disable",
+  assert.deepEqual(
+    createMySqlConnectionOptions("mysql://user:pass@db.example/taller_db", {
+      production: true,
+      ca,
+    }).ssl,
+    { rejectUnauthorized: true, ca },
   );
+  assert.throws(() => createMySqlConnectionOptions("postgres://localhost/taller_db"), /mysql:\/\//);
+  assert.throws(() => createMySqlConnectionOptions("mysql://localhost"), /nombre de la base/);
   assert.equal(loadConfig({ DATABASE_SSL_CA: ca.replaceAll("\n", "\\n"), MAIL_DRY_RUN: "true" }).databaseSslCa, ca);
-  assert.throws(() => loadConfig({ DATABASE_SSL_CA: "certificado inválido", MAIL_DRY_RUN: "true" }), /DATABASE_SSL_CA/);
+  assert.throws(() => loadConfig({ DATABASE_SSL_CA: "invalid certificate", MAIL_DRY_RUN: "true" }), /DATABASE_SSL_CA/);
 });
 
 test("config y cliente Meta: requiere los secretos juntos y envía plantillas con el código en el cuerpo", async () => {
@@ -142,7 +145,7 @@ test("API web: registro público crea clientes, el login emite sesión y protege
   });
   const database = {
     async createAccount(email, passwordHash) {
-      if (accounts.has(email)) throw Object.assign(new Error("duplicate"), { code: "23505" });
+      if (accounts.has(email)) throw Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" });
       accounts.set(email, { email, passwordHash, role: "client" });
     },
     async getAccount(email) { return accounts.get(email) || null; },
@@ -500,7 +503,7 @@ test("responde 413 a cuerpos fragmentados que superan el límite", async () => {
   }
 });
 
-test("readiness comprueba PostgreSQL y conserva health como liveness", async () => {
+test("readiness checks the database and keeps health as liveness", async () => {
   const missingDatabase = await start();
   try {
     assert.equal((await fetch(`${missingDatabase.url}/health`)).status, 200);

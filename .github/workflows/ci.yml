@@ -9,18 +9,18 @@ jobs:
   test-and-build:
     runs-on: ubuntu-latest
     env:
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sistema_test
+      TEST_DATABASE_URL: mysql://root:root@127.0.0.1:3306/sistema_test
     services:
-      postgres:
-        image: postgres:16
+      mysql:
+        image: mysql:8.4
         env:
-          POSTGRES_DB: sistema_test
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          MYSQL_DATABASE: sistema_test
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_ROOT_HOST: "%"
         ports:
-          - 5432:5432
+          - 3306:3306
         options: >-
-          --health-cmd "pg_isready -U postgres -d sistema_test"
+          --health-cmd "mysqladmin ping --silent"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -32,6 +32,7 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
+            server/package-lock.json
             frontend/package-lock.json
       # --ignore-scripts: las pruebas no necesitan compilar better-sqlite3.
       - run: npm ci --ignore-scripts
