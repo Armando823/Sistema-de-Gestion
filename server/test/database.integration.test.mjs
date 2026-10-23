@@ -160,7 +160,7 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   assert.equal(inventoryHistory[0].quantityDelta, 0);
   assert.equal(inventoryHistory[0].stockAfter, null);
   assert.deepEqual(
-    (await database.listInventoryMovements({ beforeId: inventoryHistory[1].id, limit: 10 }))
+    (await database.listInventoryMovements({ beforeId: inventoryHistory[0].id, limit: 10 }))
       .map(({ action }) => action),
     ["updated", "stock_adjusted", "stock_adjusted", "created"],
   );
