@@ -42,6 +42,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
     `migration_empty_${suffix}_test`,
     `migration_legacy_${suffix}_test`,
     `migration_current_${suffix}_test`,
+    `migration_unrecognized_${suffix}_test`,
   ];
   const createdDatabases = new Set();
   const databasePools = [];
@@ -112,6 +113,25 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
     );
     createdDatabases.add(name);
   }
+
+  const unrecognizedUrl = new URL(connectionString);
+  unrecognizedUrl.pathname = `/${databaseNames[3]}`;
+  const unrecognizedSetup = await mysql.createConnection(unrecognizedUrl.toString());
+  try {
+    await unrecognizedSetup.query("CREATE TABLE unrelated_data (id INT NOT NULL PRIMARY KEY)");
+  } finally {
+    await unrecognizedSetup.end();
+  }
+  const unrecognizedDatabase = createTestDatabase(databaseNames[3]);
+  await assert.rejects(
+    unrecognizedDatabase.migrate(),
+    /tablas sin historial que no corresponden al esquema conocido/,
+  );
+  assert.equal(
+    (await queryDatabase(databaseNames[3], "SHOW TABLES")).length,
+    2,
+    "el migrador no debe adoptar ni ampliar una base desconocida",
+  );
 
   const freshDatabase = createTestDatabase(databaseNames[0]);
   const secondFreshDatabase = createTestDatabase(databaseNames[0]);

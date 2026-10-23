@@ -148,7 +148,7 @@ async function validateSchema(connection, expected, description) {
     for (const [columnName, expectedType] of Object.entries(columns)) {
       const actualType = actual.columns.get(`${tableName}.${columnName}`);
       if (!actualType) problems.push(`falta ${tableName}.${columnName}`);
-      else if (actualType !== expectedType) {
+      else if (actualType !== expectedType.toLowerCase().replace(/\s+/g, "")) {
         problems.push(`${tableName}.${columnName} tiene tipo ${actualType}; se esperaba ${expectedType}`);
       }
     }
@@ -162,7 +162,19 @@ async function baselineLegacySchema(connection, migrations) {
   const names = Object.keys(legacySchema);
   const actual = await inspectTables(connection, names);
   const present = names.filter((name) => actual.tables.has(name));
-  if (present.length === 0) return false;
+  if (present.length === 0) {
+    const [[tableRow]] = await connection.query(
+      `SELECT COUNT(*) AS tableCount
+       FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_TYPE = 'BASE TABLE'
+         AND TABLE_NAME <> 'schema_migrations'`,
+    );
+    if (Number(tableRow.tableCount) > 0) {
+      throw new Error("La base contiene tablas sin historial que no corresponden al esquema conocido.");
+    }
+    return false;
+  }
   await validateSchema(connection, legacySchema, "existente sin historial de migraciones");
   const [indexRows] = await connection.execute(
     `SELECT TABLE_NAME AS tableName, INDEX_NAME AS indexName, NON_UNIQUE AS nonUnique,
