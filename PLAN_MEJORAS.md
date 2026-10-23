@@ -42,7 +42,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 ### 2. Endurecer contratos y estructura de la API
 
 - [x] Separar `server/src/app.js` por rutas/dominios (autenticación, órdenes, clientes, inventario, ajustes y notificaciones), conservando una única composición de aplicación. Los handlers viven en `server/src/routes/auth.js`, `server/src/routes/repairs.js`, `server/src/routes/admin.js`, `server/src/routes/settings.js` y `server/src/routes/notifications.js`; las garantías de clientes se mantienen en el módulo administrativo existente.
-- En curso: compartir validación de paginación por cursor entre historiales de órdenes e inventario (`server/src/validation.js`); continuar con validadores comunes donde los contratos coincidan, conservando errores HTTP específicos por ruta.
+- [x] Compartir validación de paginación por cursor entre historiales de órdenes e inventario (`server/src/validation.js`); continúan pendientes otros validadores comunes, conservando errores HTTP específicos por ruta.
 - Definir explícitamente autorización por rol y propiedad para cada operación, especialmente lectura de fotos/constancias, cambios de estado, importación, inventario y ajustes.
 - Normalizar fechas, zonas horarias, moneda y formatos de teléfono en límites claros de la API y la base.
 - Añadir límites paginados/filtros en las listas si las mediciones muestran que el volumen esperado lo requiere; evitar devolver imágenes base64 en consultas que no las necesitan.
@@ -52,7 +52,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 
 ### 3. Evolucionar MySQL con seguridad
 
-- Introducir migraciones SQL versionadas, ejecutadas explícitamente durante despliegue, y dejar la inicialización normal del servidor libre de cambios de esquema implícitos.
+- [x] Introducir migraciones SQL versionadas, ejecutadas explícitamente durante despliegue, y dejar la inicialización normal del servidor libre de cambios de esquema implícitos.
 - Revisar el modelo de órdenes, cuentas, clientes, historial, garantías e inventario; usar columnas tipadas para datos consultables y reservar JSON para atributos realmente flexibles.
 - Definir claves foráneas, restricciones, índices y reglas de eliminación según el ciclo de vida y la privacidad de los registros.
 - Asegurar transacciones y restricciones frente a carreras para códigos únicos, propiedad de órdenes y cantidades de inventario.
@@ -88,7 +88,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 - Añadir ESLint y formato consistente con configuración mínima y aplicarlos en CI.
 - Añadir pruebas de componentes para formularios, login, listas, confirmaciones, manejo de errores y validaciones visuales relevantes.
 - Añadir pruebas end-to-end de navegador para los caminos críticos: iniciar sesión, crear orden, consultar como propietario, cambiar estado como administración, cargar fotos, emitir constancia y actualizar inventario.
-- Mantener pruebas de integración reales con MySQL 8 en CI; evitar que la validación crítica quede omitida cuando no hay MySQL local.
+- [x] Mantener pruebas de integración reales con MySQL 8 en CI; el workflow levanta MySQL 8 y ejecuta migraciones y pruebas de integración.
 - Publicar cobertura como tendencia y aumentar umbrales gradualmente desde la línea base, sin reducir cobertura ni deshabilitar pruebas para hacer pasar CI.
 - Añadir pruebas de accesibilidad automatizadas y comprobaciones de build para configuración de producción.
 
@@ -96,10 +96,11 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 
 ### 7. Preparar operación y recuperación
 
-- Añadir cierre ordenado de HTTP y pool MySQL, tiempos de espera, límites de conexiones y manejo visible de fallos de dependencias externas.
+- [x] Añadir cierre ordenado de HTTP y pool MySQL y tiempos de espera; el manejo de dependencias externas y los límites de conexiones siguen requiriendo revisión operativa.
 - Usar logs estructurados con identificador de solicitud, sin registrar contraseñas, códigos OTP, tokens, firmas ni datos personales innecesarios.
-- Separar liveness de readiness y revisar que readiness mida las dependencias necesarias sin exponer información sensible.
-- Documentar despliegue reproducible, configuración de secretos, migraciones, copias de seguridad y restauración probada de MySQL.
+- [x] Separar liveness de readiness: `/health` comprueba el proceso y `/ready` comprueba MySQL sin exponer detalles.
+- [x] Documentar despliegue reproducible, configuración de secretos y migraciones en `server/README.md`.
+- Documentar y probar un procedimiento de copia de seguridad y restauración de la base MySQL; el respaldo administrativo de órdenes no sustituye el respaldo completo de la base.
 - Establecer métricas mínimas para errores, latencia, base de datos, correos/WhatsApp y tamaño de medios, conservando la decisión de no incorporar servicios adicionales de persistencia.
 
 **Salida verificable:** procedimiento de despliegue y recuperación ensayado; servicio se apaga limpiamente; logs permiten diagnosticar errores sin filtrar secretos.
@@ -114,7 +115,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 6. Pruebas E2E, lint/formato y accesibilidad.
 7. Rendimiento medido, operación, backups y documentación.
 
-**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, la validación/restauración administrativa de respaldos y la sincronización condicional de órdenes. La modularización de las rutas API por dominio también está completada; continúan pendientes la extracción de validadores compartidos, la modularización del frontend, seguridad, cobertura y operación.
+**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, la validación/restauración administrativa de respaldos y la sincronización condicional de órdenes. También están completadas la modularización de rutas API, la validación compartida de cursores, las pruebas de integración MySQL en CI, el cierre ordenado del servidor y la separación de liveness/readiness. Siguen pendientes la línea base formal de contratos, revisar el esquema completo, modularizar el frontend, completar controles de seguridad, pruebas de componentes/E2E y documentar/probar la recuperación de MySQL.
 
 Cada etapa debe ser un conjunto pequeño de cambios revisables. No cambiar simultáneamente el modelo de datos, autenticación y toda la UI; desplegar cada paso tras sus pruebas para reducir riesgo y facilitar reversión.
 
