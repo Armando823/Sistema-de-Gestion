@@ -70,6 +70,28 @@ const migrationSchema = {
       updated_at: "timestamp(3)",
     },
   },
+  "010_audit_history": {
+    repair_status_history: {
+      id: "bigint unsigned",
+      repair_id: "varchar(12)",
+      previous_status: "varchar(40)",
+      new_status: "varchar(40)",
+      actor_email: "varchar(254)",
+      occurred_at: "timestamp(3)",
+    },
+  },
+  "011_inventory_movements": {
+    inventory_movements: {
+      id: "bigint unsigned",
+      item_id: "varchar(100)",
+      item_name: "varchar(160)",
+      action: "enum('created','updated','stock_adjusted','deleted')",
+      quantity_delta: "bigint",
+      stock_after: "bigint unsigned",
+      actor_email: "varchar(254)",
+      occurred_at: "timestamp(3)",
+    },
+  },
 };
 
 function migrationChecksum(sql) {

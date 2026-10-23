@@ -324,7 +324,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     }
     const updateMatch = /^\/api\/repairs\/(REP-\d{4,8})$/.exec(pathname);
     if (req.method === "PATCH" && updateMatch) {
-      requireAdmin(req);
+      const adminSession = requireAdmin(req);
       const body = parseJson(await readBody(req, config.limits.bodyBytes));
       const patch = body?.patch;
       if (!Number.isSafeInteger(body?.expectedVersion) || body.expectedVersion < 1 ||
@@ -352,12 +352,34 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
         updateMatch[1],
         body.expectedVersion,
         { ...patch, updated: new Date(now()).toISOString() },
+        adminSession.email,
       );
       if (!repair) throw new HttpError(404, "No se encontró la orden.");
       if (repair.conflict) {
         throw new HttpError(409, "La orden cambió en otra sesión. Actualiza la lista e inténtalo de nuevo.");
       }
       send(res, 200, { repair }, cors);
+      return;
+    }
+    const historyMatch = /^\/api\/repairs\/(REP-\d{4,8})\/status-history$/.exec(pathname);
+    if (req.method === "GET" && historyMatch) {
+      requireAdmin(req);
+      const query = new URL(req.url, "http://localhost").searchParams;
+      const beforeId = query.get("beforeId");
+      const limit = query.has("limit") ? Number(query.get("limit")) : 50;
+      if ((beforeId !== null &&
+            (!/^[1-9]\d{0,19}$/.test(beforeId) || BigInt(beforeId) > 18446744073709551615n)) ||
+          !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+        throw new HttpError(422, "Los parámetros de paginación no son válidos.");
+      }
+      const history = await database.listRepairStatusHistory(historyMatch[1], {
+        beforeId: beforeId || "18446744073709551615",
+        limit,
+      });
+      send(res, 200, {
+        history,
+        nextBeforeId: history.length === limit ? history[history.length - 1].id : null,
+      }, cors);
       return;
     }
     const deleteMatch = /^\/api\/repairs\/(REP-\d{4,8})$/.exec(pathname);
@@ -444,16 +466,35 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
 
   async function handleInventory(req, res, pathname, cors) {
     requireDatabase();
-    requireAdmin(req);
+    const session = requireAdmin(req);
     if (req.method === "GET" && pathname === "/api/inventory") {
       send(res, 200, { items: await database.loadInventory() }, cors);
+      return;
+    }
+    if (req.method === "GET" && pathname === "/api/inventory/movements") {
+      const query = new URL(req.url, "http://localhost").searchParams;
+      const beforeId = query.get("beforeId");
+      const limit = query.has("limit") ? Number(query.get("limit")) : 50;
+      if ((beforeId !== null &&
+            (!/^[1-9]\d{0,19}$/.test(beforeId) || BigInt(beforeId) > 18446744073709551615n)) ||
+          !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+        throw new HttpError(422, "Los parámetros de paginación no son válidos.");
+      }
+      const movements = await database.listInventoryMovements({
+        beforeId: beforeId || "18446744073709551615",
+        limit,
+      });
+      send(res, 200, {
+        movements,
+        nextBeforeId: movements.length === limit ? movements[movements.length - 1].id : null,
+      }, cors);
       return;
     }
     if (pathname === "/api/inventory" && req.method === "POST") {
       const body = parseJson(await readBody(req, 16_384));
       const item = parseInventoryItem(body?.item);
       if (!item) throw new HttpError(422, "Los datos del repuesto no son válidos.");
-      await database.createInventoryItem(item);
+      await database.createInventoryItem(item, session.email);
       send(res, 201, { item }, cors);
       return;
     }
@@ -463,7 +504,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       if (!Number.isSafeInteger(body?.delta) || body.delta === 0 || Math.abs(body.delta) > 1_000_000) {
         throw new HttpError(422, "El movimiento de existencias no es válido.");
       }
-      const item = await database.adjustInventoryStock(stockMatch[1], body.delta);
+      const item = await database.adjustInventoryStock(stockMatch[1], body.delta, session.email);
       if (!item) throw new HttpError(404, "No se encontró el repuesto.");
       if (item.conflict) throw new HttpError(409, "El movimiento dejaría existencias negativas.");
       send(res, 200, { item }, cors);
@@ -477,14 +518,14 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
           !Number.isSafeInteger(body?.stockDelta) || Math.abs(body.stockDelta) > 1_000_000) {
         throw new HttpError(422, "Los datos del repuesto no son válidos.");
       }
-      const saved = await database.updateInventoryItem(item.id, item, body.stockDelta);
+      const saved = await database.updateInventoryItem(item.id, item, body.stockDelta, session.email);
       if (!saved) throw new HttpError(404, "No se encontró el repuesto.");
       if (saved.conflict) throw new HttpError(409, "El cambio dejaría existencias negativas.");
       send(res, 200, { item: saved }, cors);
       return;
     }
     if (itemMatch && req.method === "DELETE") {
-      const deleted = await database.deleteInventoryItem(itemMatch[1]);
+      const deleted = await database.deleteInventoryItem(itemMatch[1], session.email);
       if (!deleted) throw new HttpError(404, "No se encontró el repuesto.");
       send(res, 200, { ok: true }, cors);
       return;

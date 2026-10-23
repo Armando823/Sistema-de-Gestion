@@ -33,6 +33,10 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
         try {
           if (seeded) {
             await cleanup.execute(
+              `DELETE FROM repair_status_history WHERE repair_id IN (${ids.map(() => "?").join(", ")})`,
+              ids,
+            );
+            await cleanup.execute(
               `DELETE FROM repairs WHERE id IN (${ids.map(() => "?").join(", ")})`,
               ids,
             );
@@ -43,6 +47,7 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
           if (inventoryCreated) {
             await cleanup.execute("DELETE FROM inventory WHERE id = ?", [inventoryId]);
           }
+          await cleanup.execute("DELETE FROM inventory_movements WHERE item_id = ?", [inventoryId]);
           if (phoneAccountCreated) {
             await cleanup.execute("DELETE FROM phone_login_codes WHERE phone = ?", [phone]);
             await cleanup.execute(
@@ -91,11 +96,11 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
     database.updateRepair(ids[0], exactRepair.version, {
       status: "En diagnóstico",
       updated: "integración",
-    }),
+    }, adminEmail),
     database.updateRepair(ids[0], exactRepair.version, {
       status: "Entregado",
       updated: "concurrente",
-    }),
+    }, adminEmail),
   ]);
   const revisedRepair = concurrentUpdates.find((repair) => !repair.conflict);
   assert.equal(concurrentUpdates.filter((repair) => repair.conflict).length, 1);
@@ -103,8 +108,13 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   const staleUpdate = await database.updateRepair(ids[0], exactRepair.version, {
     status: "Entregado",
     updated: "obsoleto",
-  });
+  }, adminEmail);
   assert.deepEqual(staleUpdate, { conflict: true, version: 2 });
+  const statusHistory = await database.listRepairStatusHistory(ids[0]);
+  assert.equal(statusHistory.length, 1);
+  assert.equal(statusHistory[0].previousStatus, "Recibido");
+  assert.equal(statusHistory[0].newStatus, revisedRepair.status);
+  assert.equal(statusHistory[0].actorEmail, adminEmail);
 
   await database.saveCustomerWarranty(`email:${adminEmail}`, "2027-02-28", adminEmail);
   warrantySaved = true;
@@ -120,23 +130,40 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
     cost: 100,
     supplier: "Test supplier",
   };
-  await database.createInventoryItem(inventoryItem);
+  await database.createInventoryItem(inventoryItem, adminEmail);
   inventoryCreated = true;
   const concurrentMovements = await Promise.all([
-    database.adjustInventoryStock(inventoryId, -1),
-    database.adjustInventoryStock(inventoryId, -1),
+    database.adjustInventoryStock(inventoryId, -1, adminEmail),
+    database.adjustInventoryStock(inventoryId, -1, adminEmail),
   ]);
   assert.deepEqual(concurrentMovements.map(({ stock }) => stock).sort(), [0, 1]);
-  assert.deepEqual(await database.adjustInventoryStock(inventoryId, -1), { conflict: true, stock: 0 });
+  assert.deepEqual(await database.adjustInventoryStock(inventoryId, -1, adminEmail), { conflict: true, stock: 0 });
   const updatedInventory = await database.updateInventoryItem(
     inventoryId,
     { ...inventoryItem, minimum: 3 },
     0,
+    adminEmail,
   );
   assert.equal(updatedInventory.stock, 0);
   assert.equal(updatedInventory.minimum, 3);
-  assert.equal(await database.deleteInventoryItem(inventoryId), true);
+  assert.equal(await database.deleteInventoryItem(inventoryId, adminEmail), true);
   inventoryCreated = false;
+  const inventoryHistory = await database.listInventoryMovements({ limit: 10 });
+  assert.deepEqual(inventoryHistory.map(({ action }) => action), [
+    "deleted",
+    "updated",
+    "stock_adjusted",
+    "stock_adjusted",
+    "created",
+  ]);
+  assert.deepEqual(inventoryHistory.map(({ actorEmail }) => actorEmail), Array(5).fill(adminEmail));
+  assert.equal(inventoryHistory[0].quantityDelta, 0);
+  assert.equal(inventoryHistory[0].stockAfter, null);
+  assert.deepEqual(
+    (await database.listInventoryMovements({ beforeId: inventoryHistory[1].id, limit: 10 }))
+      .map(({ action }) => action),
+    ["updated", "stock_adjusted", "stock_adjusted", "created"],
+  );
 
   const account = await database.getOrCreatePhoneAccount(phone);
   phoneAccountCreated = true;

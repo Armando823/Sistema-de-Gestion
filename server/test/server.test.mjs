@@ -218,15 +218,31 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
   const client = { email: "cliente@correo.com", role: "client" };
   const storedWarranties = {};
   const inventory = new Map();
+  const repairHistory = [];
+  const inventoryHistory = [];
   let repairVersion = 1;
   const database = {
     async createRepair(account, newRepair) {
       return { ...newRepair, status: account.role === "admin" ? newRepair.status : "Recibido", version: 1 };
     },
-    async updateRepair(id, expectedVersion, patch) {
+    async updateRepair(id, expectedVersion, patch, actorEmail) {
       if (expectedVersion !== repairVersion) return { conflict: true, version: repairVersion };
+      if (patch.status !== undefined && patch.status !== repair.status) {
+        repairHistory.push({
+          repairId: id,
+          previousStatus: repair.status,
+          newStatus: patch.status,
+          actorEmail,
+        });
+      }
       repairVersion += 1;
       return { ...repair, ...patch, id, version: repairVersion };
+    },
+    async listRepairStatusHistory(id, { beforeId, limit }) {
+      assert.equal(id, "REP-1001");
+      assert.equal(beforeId, "18446744073709551615");
+      assert.equal(limit, 50);
+      return repairHistory;
     },
     async listCustomerWarranties() { return { ...storedWarranties }; },
     async saveCustomerWarranty(key, expiresOn, updatedBy) {
@@ -235,28 +251,40 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
       assert.equal(updatedBy, admin.email);
     },
     async loadInventory() { return [...inventory.values()]; },
-    async createInventoryItem(item) {
+    async createInventoryItem(item, actorEmail) {
       if (inventory.has(item.id)) throw Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" });
       inventory.set(item.id, item);
+      inventoryHistory.push({ itemId: item.id, action: "created", actorEmail });
       return item;
     },
-    async updateInventoryItem(id, item, stockDelta) {
+    async updateInventoryItem(id, item, stockDelta, actorEmail) {
       const current = inventory.get(id);
       if (!current) return null;
       if (current.stock + stockDelta < 0) return { conflict: true, stock: current.stock };
       const updated = { ...item, stock: current.stock + stockDelta };
       inventory.set(id, updated);
+      inventoryHistory.push({ itemId: id, action: stockDelta === 0 ? "updated" : "stock_adjusted", actorEmail });
       return updated;
     },
-    async adjustInventoryStock(id, delta) {
+    async adjustInventoryStock(id, delta, actorEmail) {
       const current = inventory.get(id);
       if (!current) return null;
       if (current.stock + delta < 0) return { conflict: true, stock: current.stock };
       const updated = { ...current, stock: current.stock + delta };
       inventory.set(id, updated);
+      inventoryHistory.push({ itemId: id, action: "stock_adjusted", actorEmail });
       return updated;
     },
-    async deleteInventoryItem(id) { return inventory.delete(id); },
+    async deleteInventoryItem(id, actorEmail) {
+      const deleted = inventory.delete(id);
+      if (deleted) inventoryHistory.push({ itemId: id, action: "deleted", actorEmail });
+      return deleted;
+    },
+    async listInventoryMovements({ beforeId, limit }) {
+      assert.equal(beforeId, "18446744073709551615");
+      assert.equal(limit, 2);
+      return inventoryHistory.slice(0, limit).map((movement, index) => ({ ...movement, id: String(index + 1) }));
+    },
   };
   const app = await start({ config, database });
   const clientToken = createSessionToken(client, config.sessionSecret);
@@ -288,6 +316,27 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
     });
     assert.equal(changed.status, 200);
     assert.equal((await changed.json()).repair.version, 2);
+    assert.deepEqual(repairHistory, [{
+      repairId: "REP-1001",
+      previousStatus: "Recibido",
+      newStatus: "En diagnóstico",
+      actorEmail: admin.email,
+    }]);
+    assert.equal((await fetch(`${app.url}/api/repairs/REP-1001/status-history`, {
+      headers: headers(clientToken),
+    })).status, 403);
+    const statusHistory = await fetch(`${app.url}/api/repairs/REP-1001/status-history`, {
+      headers: headers(adminToken),
+    });
+    assert.equal(statusHistory.status, 200);
+    assert.deepEqual(await statusHistory.json(), {
+      history: repairHistory,
+      nextBeforeId: null,
+    });
+    assert.equal((await fetch(
+      `${app.url}/api/repairs/REP-1001/status-history?limit=101`,
+      { headers: headers(adminToken) },
+    )).status, 422);
 
     const stale = await fetch(`${app.url}/api/repairs/REP-1001`, {
       method: "PATCH",
@@ -340,6 +389,18 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
     });
     assert.equal(createdItem.status, 201);
     assert.deepEqual((await createdItem.json()).item, inventoryItem);
+    assert.equal((await fetch(`${app.url}/api/inventory/movements`, {
+      headers: headers(clientToken),
+    })).status, 403);
+    const inventoryMovements = await fetch(`${app.url}/api/inventory/movements?limit=2`, {
+      headers: headers(adminToken),
+    });
+    assert.equal(inventoryMovements.status, 200);
+    assert.equal((await inventoryMovements.json()).movements.length, 1);
+    const invalidMovementPage = await fetch(`${app.url}/api/inventory/movements?limit=101`, {
+      headers: headers(adminToken),
+    });
+    assert.equal(invalidMovementPage.status, 422);
 
     const stockOut = await fetch(`${app.url}/api/inventory/test-item/stock`, {
       method: "PATCH",
@@ -368,6 +429,12 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
       headers: headers(adminToken),
     });
     assert.equal(deletedItem.status, 200);
+    assert.deepEqual(inventoryHistory.map(({ action, actorEmail }) => ({ action, actorEmail })), [
+      { action: "created", actorEmail: admin.email },
+      { action: "stock_adjusted", actorEmail: admin.email },
+      { action: "updated", actorEmail: admin.email },
+      { action: "deleted", actorEmail: admin.email },
+    ]);
   } finally {
     await app.close();
   }

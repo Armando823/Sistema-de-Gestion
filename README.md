@@ -14,6 +14,8 @@ almacenamiento local como fuente de datos.
 - Registrar hasta tres fotos de recepción, firma y aceptación; generar,
   imprimir o descargar constancias.
 - Gestionar inventario y configuración del taller.
+- Consultar el historial administrativo de cambios de estado y movimientos de
+  inventario.
 - Enviar constancias por correo y códigos por WhatsApp cuando el servidor tenga
   configuradas esas integraciones y el cliente haya dado su autorización.
 
