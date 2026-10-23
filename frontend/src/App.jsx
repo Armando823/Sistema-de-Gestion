@@ -5,7 +5,7 @@ import ClientView from "./components/client/ClientView";
 import { emptyForm, repairStatuses } from "./data/repairData";
 import ConfirmModal from "./components/modals/ConfirmModal";
 import ReceiptModal from "./components/modals/ReceiptModal";
-import { loadRepairs, saveRepairs } from "./services/repairStorage";
+import { loadRepairs } from "./services/repairStorage";
 import {
   authenticateClient,
   authenticateAdmin,
@@ -14,6 +14,7 @@ import {
   saveClientSession,
 } from "./services/accountStorage";
 import {
+  createSharedRepair,
   deleteSharedRepair,
   nextSharedRepairId,
   loginSharedPhone,
@@ -22,6 +23,7 @@ import {
   sendSharedRepairCode,
   readSetting,
   saveSetting,
+  updateSharedRepair,
 } from "./services/dbService";
 import { readImage } from "./utils/image";
 import { sendReceiptEmail } from "./services/notifyService";
@@ -153,12 +155,6 @@ function App({ version = "Final" }) {
     };
   }, []);
   useEffect(() => {
-    if (!role || !dataReady || !repairsReady) return;
-    saveRepairs(repairs).then((saved) => {
-      if (!saved) setNotice("No se pudieron guardar los cambios en la base de datos compartida.");
-    }).catch(() => setNotice("No se pudieron guardar los cambios en la base de datos compartida."));
-  }, [dataReady, repairsReady, repairs, role]);
-  useEffect(() => {
     if (!role || !dataReady || !repairsReady) return undefined;
     let active = true;
     let requestInProgress = false;
@@ -238,12 +234,14 @@ function App({ version = "Final" }) {
       updatedAt: timestamp,
       updated: formatTimestamp(timestamp),
     };
-    const updatedRepairs = [newRepair, ...repairs];
-    if (!await saveRepairs(updatedRepairs)) {
-      setNotice(`${id}: no se pudo guardar la orden. Revisa tu conexión e inténtalo de nuevo.`);
+    let savedRepair;
+    try {
+      savedRepair = await createSharedRepair(newRepair);
+    } catch (error) {
+      setNotice(`${id}: ${error.message || "no se pudo guardar la orden."}`);
       return;
     }
-    setRepairs(updatedRepairs);
+    setRepairs((current) => [savedRepair, ...current.filter((repair) => repair.id !== id)]);
     clearForm();
     clearError();
     if (newRepair.contactEmail) await emailReceipt(newRepair, noticeMessage);
@@ -313,19 +311,23 @@ function App({ version = "Final" }) {
 
   async function confirmAction() {
     if (confirmation?.type === "status") {
-      setRepairs((current) =>
-        current.map((repair) =>
-          repair.id === confirmation.id
-            ? {
-                ...repair,
-                status: confirmation.status,
-                updatedAt: new Date().toISOString(),
-                updated: formatTimestamp(),
-              }
-            : repair,
-        ),
-      );
-      setNotice(`${confirmation.id} actualizada`);
+      const current = repairs.find((repair) => repair.id === confirmation.id);
+      if (!current) {
+        setNotice("No se encontró la orden que intentas actualizar. Actualiza la lista.");
+        setConfirmation(null);
+        return;
+      }
+      try {
+        const savedRepair = await updateSharedRepair(
+          confirmation.id,
+          current.version,
+          { status: confirmation.status },
+        );
+        setRepairs((items) => items.map((repair) => repair.id === savedRepair.id ? savedRepair : repair));
+        setNotice(`${confirmation.id} actualizada`);
+      } catch (error) {
+        setNotice(error.message || "No se pudo actualizar el estado de la orden.");
+      }
     }
     if (confirmation?.type === "delete") {
       try {
@@ -411,16 +413,21 @@ function App({ version = "Final" }) {
       // así importar una copia nunca borra el trabajo actual.
       const knownIds = new Set(repairs.map((repair) => repair.id));
       const added = [];
+      let failed = 0;
       for (const repair of validRepairs) {
-        if (!knownIds.has(repair.id)) {
-          knownIds.add(repair.id);
-          added.push(repair);
+        if (knownIds.has(repair.id)) continue;
+        knownIds.add(repair.id);
+        try {
+          added.push(await createSharedRepair(repair));
+        } catch (error) {
+          if (/existe|duplicate/i.test(error.message)) continue;
+          failed += 1;
         }
       }
-      setRepairs([...added, ...repairs]);
+      setRepairs((current) => [...added, ...current]);
       setSearch("");
       setNotice(
-        `${added.length} orden(es) agregada(s), ${validRepairs.length - added.length} ya existían`,
+        `${added.length} orden(es) agregada(s), ${validRepairs.length - added.length - failed} ya existían${failed ? `, ${failed} no se pudieron guardar` : ""}`,
       );
     } catch {
       setNotice("No se pudo leer el archivo de órdenes");
@@ -438,11 +445,10 @@ function App({ version = "Final" }) {
     }
     try {
       const photos = await Promise.all(selectedFiles.map((file) => readImage(file)));
-      setRepairs((current) =>
-        current.map((repair) =>
-          repair.id === id ? { ...repair, photos, updated: "Ahora" } : repair,
-        ),
-      );
+      const current = repairsRef.current.find((repair) => repair.id === id);
+      if (!current) throw new Error("No se encontró la orden. Actualiza la lista e inténtalo de nuevo.");
+      const savedRepair = await updateSharedRepair(id, current.version, { photos });
+      setRepairs((items) => items.map((repair) => repair.id === id ? savedRepair : repair));
       setNotice(`${id}: fotos actualizadas`);
     } catch (error) {
       setNotice(error.message);

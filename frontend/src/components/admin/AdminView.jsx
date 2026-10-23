@@ -1,10 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AdminDashboard from "./AdminDashboard";
 import OrderList from "./OrderList";
 import { repairStatuses } from "../../data/repairData";
 import { readImage } from "../../utils/image";
 import { toCsv } from "../../utils/csv";
-import { loadInventory, deleteSetting, readSetting, saveInventory, saveSetting } from "../../services/dbService";
+import {
+  adjustInventoryStock,
+  createInventoryItem,
+  deleteInventoryItem,
+  deleteSetting,
+  loadCustomerWarranties,
+  loadInventory,
+  readSetting,
+  saveCustomerWarranty,
+  saveSetting,
+  updateInventoryItem,
+} from "../../services/dbService";
 
 export default function AdminView({
   version,
@@ -39,22 +50,15 @@ export default function AdminView({
       if (!saved) onNotice("No se pudo guardar el logo del taller.");
     }).catch((error) => onNotice(error.message || "No se pudo guardar el logo del taller."));
   }, [companyLogo, logoReady]);
-  const inventoryFallback = [];
   const [inventoryData, setInventoryData] = useState([]);
   const [inventoryReady, setInventoryReady] = useState(false);
+  const [inventoryMutationBusy, setInventoryMutationBusy] = useState(false);
   useEffect(() => {
     loadInventory().then((savedInventory) => {
-      setInventoryData(savedInventory.length > 0 ? savedInventory : inventoryFallback);
+      setInventoryData(savedInventory);
       setInventoryReady(true);
     }).catch((error) => onNotice(error.message || "No se pudo cargar el inventario."));
   }, []);
-  useEffect(() => {
-    if (inventoryReady) {
-      saveInventory(inventoryData).then((saved) => {
-        if (!saved) onNotice("No se pudo guardar el inventario.");
-      }).catch((error) => onNotice(error.message || "No se pudo guardar el inventario."));
-    }
-  }, [inventoryData, inventoryReady]);
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("Todos");
   const [editingInventoryId, setEditingInventoryId] = useState(null);
@@ -67,11 +71,22 @@ export default function AdminView({
     cost: "",
     supplier: "",
   });
-  const [clientsData, setClientsData] = useState([]);
+  const [clientWarranties, setClientWarranties] = useState({});
+  const [warrantiesReady, setWarrantiesReady] = useState(false);
+  const [savingWarrantyKey, setSavingWarrantyKey] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("Todos");
   const [reportPeriod, setReportPeriod] = useState("all");
   const [settingsSaved, setSettingsSaved] = useState(false);
+
+  useEffect(() => {
+    loadCustomerWarranties().then((warranties) => {
+      setClientWarranties(warranties || {});
+      setWarrantiesReady(true);
+    }).catch((error) => {
+      onNotice(error.message || "No se pudieron cargar las garantías de clientes.");
+    });
+  }, []);
 
   function showOrders() {
     setActiveSection("orders");
@@ -122,6 +137,71 @@ export default function AdminView({
     if (!date) return "Sin cobertura";
     return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium" }).format(new Date(`${date}T12:00:00`));
   }
+
+  function warrantyExpiryDate(currentDate) {
+    const today = new Date();
+    const current = currentDate ? new Date(`${currentDate}T12:00:00`) : null;
+    const next = current && current > today ? current : today;
+    next.setFullYear(next.getFullYear() + 1);
+    return next.toISOString().slice(0, 10);
+  }
+
+  async function updateWarranty(client, expiresOn) {
+    setSavingWarrantyKey(client.id);
+    try {
+      await saveCustomerWarranty(client.id, expiresOn);
+      setClientWarranties((current) => {
+        const updated = { ...current };
+        if (expiresOn) updated[client.id] = expiresOn;
+        else delete updated[client.id];
+        return updated;
+      });
+      onNotice(expiresOn
+        ? `Garantía de ${client.name} guardada hasta ${warrantyLabel(expiresOn)}.`
+        : `Garantía de ${client.name} eliminada.`);
+    } catch (error) {
+      onNotice(error.message || "No se pudo guardar la garantía.");
+    } finally {
+      setSavingWarrantyKey("");
+    }
+  }
+
+  const clientsData = useMemo(() => {
+    const clients = new Map();
+    for (const repair of repairs) {
+      const ownerEmail = String(repair.ownerEmail || "").trim().toLowerCase();
+      const phone = String(repair.ownerPhone || repair.phone || "").replace(/[^\d+]/g, "");
+      const id = ownerEmail ? `email:${ownerEmail}` : phone ? `phone:${phone}` : "";
+      if (!id) continue;
+      const existing = clients.get(id);
+      const latest = !existing ||
+        (Date.parse(repair.createdAt || "") || 0) >= (Date.parse(existing.lastServiceAt || "") || 0);
+      if (!existing) {
+        clients.set(id, {
+          id,
+          name: repair.customer,
+          email: repair.contactEmail || (ownerEmail && !ownerEmail.endsWith("@phone.invalid") ? ownerEmail : ""),
+          phone: repair.phone,
+          device: repair.device,
+          lastService: repair.updated || "Sin actualización",
+          lastServiceAt: repair.createdAt || "",
+          tickets: repair.status === "Entregado" ? 0 : 1,
+          warrantyUntil: clientWarranties[id] || null,
+        });
+      } else {
+        existing.tickets += repair.status === "Entregado" ? 0 : 1;
+        if (latest) {
+          existing.name = repair.customer;
+          existing.email = repair.contactEmail || existing.email;
+          existing.phone = repair.phone;
+          existing.device = repair.device;
+          existing.lastService = repair.updated || "Sin actualización";
+          existing.lastServiceAt = repair.createdAt || "";
+        }
+      }
+    }
+    return [...clients.values()];
+  }, [repairs, clientWarranties]);
 
   function openClientOrders(client) {
     setSearch(client.name);
@@ -185,32 +265,67 @@ export default function AdminView({
     setEditingInventoryId(null);
     setInventoryForm({ item: "", sku: "", category: "", stock: "", minimum: "", cost: "", supplier: "" });
   }
-  function saveInventoryItem(event) {
+  async function saveInventoryItem(event) {
     event.preventDefault();
     const item = {
       ...inventoryForm,
+      id: editingInventoryId ?? crypto.randomUUID(),
       item: inventoryForm.item.trim(),
       sku: inventoryForm.sku.trim().toUpperCase(),
       category: inventoryForm.category.trim(),
       supplier: inventoryForm.supplier.trim(),
-      stock: Math.max(Number(inventoryForm.stock) || 0, 0),
+      stock: Number(inventoryForm.stock),
       minimum: Math.max(Number(inventoryForm.minimum) || 0, 0),
       cost: Math.max(Number(inventoryForm.cost) || 0, 0),
     };
-    if (!item.item || !item.sku || !item.category || !item.supplier) return;
-    setInventoryData((current) => editingInventoryId
-      ? current.map((entry) => entry.id === editingInventoryId ? { ...entry, ...item } : entry)
-      : [...current, { id: Date.now(), ...item }]);
-    resetInventoryForm();
+    if (!inventoryReady || inventoryMutationBusy || !item.item || !item.sku || !item.category || !item.supplier) return;
+    setInventoryMutationBusy(true);
+    try {
+      const saved = editingInventoryId
+        ? await updateInventoryItem(
+          item,
+          item.stock - (inventoryData.find((entry) => entry.id === editingInventoryId)?.stock ?? item.stock),
+        )
+        : await createInventoryItem(item);
+      setInventoryData((current) => editingInventoryId
+        ? current.map((entry) => entry.id === editingInventoryId ? saved : entry)
+        : [...current, saved]);
+      resetInventoryForm();
+    } catch (error) {
+      onNotice(error.message || "No se pudo guardar el repuesto.");
+    } finally {
+      setInventoryMutationBusy(false);
+    }
   }
   function editInventoryItem(item) {
     setEditingInventoryId(item.id);
     setInventoryForm({ ...item, stock: String(item.stock), minimum: String(item.minimum), cost: String(item.cost) });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
-  function removeInventoryItem(id) {
-    setInventoryData((current) => current.filter((item) => item.id !== id));
-    if (editingInventoryId === id) resetInventoryForm();
+  async function adjustStock(id, delta) {
+    if (!inventoryReady || inventoryMutationBusy) return;
+    setInventoryMutationBusy(true);
+    try {
+      const saved = await adjustInventoryStock(id, delta);
+      setInventoryData((current) => current.map((item) => item.id === id ? saved : item));
+    } catch (error) {
+      onNotice(error.message || "No se pudo registrar el movimiento de inventario.");
+    } finally {
+      setInventoryMutationBusy(false);
+    }
+  }
+  async function removeInventoryItem(id) {
+    if (!inventoryReady || inventoryMutationBusy) return;
+    setInventoryMutationBusy(true);
+    try {
+      await deleteInventoryItem(id);
+      setInventoryData((current) => current.filter((item) => item.id !== id));
+      if (editingInventoryId === id) resetInventoryForm();
+    } catch (error) {
+      onNotice(error.message || "No se pudo eliminar el repuesto.");
+    } finally {
+      setInventoryMutationBusy(false);
+    }
   }
   const inventoryLevels = ["Todos", "Agotado", "Crítico", "Bajo", "Adecuado"];
   const filteredInventory = inventoryData.filter((item) => {
@@ -338,7 +453,7 @@ export default function AdminView({
                 <h3>Inventario inteligente</h3>
                 <p>Control de repuestos, mínimos y movimientos del taller.</p>
               </div>
-              <span className="inventory-sync">Sincronizado ahora</span>
+              <span className="inventory-sync">{inventoryReady ? "Guardado en MySQL" : "Cargando inventario..."}</span>
             </div>
             <form className="inventory-form" onSubmit={saveInventoryItem}>
               <div className="inventory-form-title">
@@ -355,7 +470,7 @@ export default function AdminView({
                 <input required aria-label="Stock mínimo" type="number" min="0" value={inventoryForm.minimum} onChange={(event) => setInventoryForm({ ...inventoryForm, minimum: event.target.value })} placeholder="Mínimo" />
                 <input required aria-label="Costo unitario" type="number" min="0" value={inventoryForm.cost} onChange={(event) => setInventoryForm({ ...inventoryForm, cost: event.target.value })} placeholder="Costo" />
                 <input required value={inventoryForm.supplier} onChange={(event) => setInventoryForm({ ...inventoryForm, supplier: event.target.value })} placeholder="Proveedor" />
-                <button type="submit" className="inventory-save">{editingInventoryId ? "Guardar cambios" : "Guardar repuesto"}</button>
+                <button type="submit" className="inventory-save" disabled={!inventoryReady || inventoryMutationBusy}>{editingInventoryId ? "Guardar cambios" : "Guardar repuesto"}</button>
               </div>
             </form>
             <div className="inventory-overview">
@@ -402,19 +517,20 @@ export default function AdminView({
                   <div className="inventory-actions">
                     <button
                       type="button"
-                      disabled={item.stock === 0}
-                      onClick={() => setInventoryData((current) => current.map((entry) => entry.id === item.id ? { ...entry, stock: Math.max(entry.stock - 1, 0) } : entry))}
+                      disabled={!inventoryReady || inventoryMutationBusy || item.stock === 0}
+                      onClick={() => adjustStock(item.id, -1)}
                     >
                       -1 salida
                     </button>
                     <button
                       type="button"
-                      onClick={() => setInventoryData((current) => current.map((entry) => entry.id === item.id ? { ...entry, stock: entry.stock + 1 } : entry))}
+                      disabled={!inventoryReady || inventoryMutationBusy}
+                      onClick={() => adjustStock(item.id, 1)}
                     >
                       +1 entrada
                     </button>
-                    <button type="button" onClick={() => editInventoryItem(item)}>Editar</button>
-                    <button type="button" className="inventory-delete" onClick={() => removeInventoryItem(item.id)}>Eliminar</button>
+                    <button type="button" disabled={!inventoryReady || inventoryMutationBusy} onClick={() => editInventoryItem(item)}>Editar</button>
+                    <button type="button" className="inventory-delete" disabled={!inventoryReady || inventoryMutationBusy} onClick={() => removeInventoryItem(item.id)}>Eliminar</button>
                   </div>
                 </article>
               ))}
@@ -454,8 +570,23 @@ export default function AdminView({
                   <div className="warranty-expiry"><span>Garantía hasta</span><strong>{warrantyLabel(client.warrantyUntil)}</strong></div>
                   <div className="customer-actions">
                     <button type="button" onClick={() => openClientOrders(client)}>Ver órdenes</button>
-                    <button type="button" onClick={() => setClientsData((current) => current.map((entry) => entry.id === client.id ? { ...entry, warrantyUntil: `${new Date().getFullYear() + 1}-${client.warrantyUntil?.slice(5) || "12-31"}` } : entry))}>{warranty === "Vigente" ? "Extender garantía" : "Asignar garantía"}</button>
-                    {warranty !== "Sin garantía" && <button type="button" className="customer-remove-warranty" onClick={() => setClientsData((current) => current.map((entry) => entry.id === client.id ? { ...entry, warrantyUntil: null } : entry))}>Eliminar garantía</button>}
+                    <button
+                      type="button"
+                      disabled={!warrantiesReady || savingWarrantyKey === client.id}
+                      onClick={() => updateWarranty(client, warrantyExpiryDate(client.warrantyUntil))}
+                    >
+                      {savingWarrantyKey === client.id ? "Guardando…" : warranty === "Vigente" ? "Extender garantía" : "Asignar garantía"}
+                    </button>
+                    {warranty !== "Sin garantía" && (
+                      <button
+                        type="button"
+                        className="customer-remove-warranty"
+                        disabled={!warrantiesReady || savingWarrantyKey === client.id}
+                        onClick={() => updateWarranty(client, null)}
+                      >
+                        Eliminar garantía
+                      </button>
+                    )}
                   </div>
                 </article>
                 );

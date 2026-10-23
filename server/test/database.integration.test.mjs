@@ -22,6 +22,9 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   let initialized = false;
   let seeded = false;
   let phoneAccountCreated = false;
+  let warrantySaved = false;
+  let inventoryCreated = false;
+  const inventoryId = `inventory-${firstId}`;
 
   t.after(async () => {
     try {
@@ -33,6 +36,12 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
               `DELETE FROM repairs WHERE id IN (${ids.map(() => "?").join(", ")})`,
               ids,
             );
+          }
+          if (warrantySaved) {
+            await cleanup.execute("DELETE FROM customer_warranties WHERE customer_key = ?", [`email:${adminEmail}`]);
+          }
+          if (inventoryCreated) {
+            await cleanup.execute("DELETE FROM inventory WHERE id = ?", [inventoryId]);
           }
           if (phoneAccountCreated) {
             await cleanup.execute("DELETE FROM phone_login_codes WHERE phone = ?", [phone]);
@@ -63,14 +72,70 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
     assert.equal(await database.getRepairById(id), null, `el identificador ${id} ya existe en la base de pruebas`);
   }
 
-  await database.saveRepairs({ email: adminEmail, role: "admin" }, [
+  const seededRepairs = [
     { id: ids[0], customer: "Exact", phone, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
     { id: ids[1], customer: "Suffix", phone: `+1 ${phone.slice(3)}`, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
     { id: ids[2], customer: "Legacy", phone: phone.slice(3), device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
     { id: ids[3], customer: "Email-owned", phone, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy", ownerEmail: adminEmail },
     { id: ids[5], customer: "Stale-link", phone: `+1 ${phone.slice(3)}`, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy", ownerPhone: phone },
-  ]);
+  ];
+  for (const repair of seededRepairs) {
+    await database.createRepair({ email: adminEmail, role: "admin" }, repair);
+  }
   seeded = true;
+  const adminAccount = { email: adminEmail, role: "admin" };
+  const exactRepair = (await database.listRepairs(adminAccount)).find(({ id }) => id === ids[0]);
+  assert.equal(exactRepair.version, 1);
+  const concurrentUpdates = await Promise.all([
+    database.updateRepair(ids[0], exactRepair.version, {
+      status: "En diagnóstico",
+      updated: "integración",
+    }),
+    database.updateRepair(ids[0], exactRepair.version, {
+      status: "Entregado",
+      updated: "concurrente",
+    }),
+  ]);
+  const revisedRepair = concurrentUpdates.find((repair) => !repair.conflict);
+  assert.equal(concurrentUpdates.filter((repair) => repair.conflict).length, 1);
+  assert.equal(revisedRepair.version, 2);
+  const staleUpdate = await database.updateRepair(ids[0], exactRepair.version, {
+    status: "Entregado",
+    updated: "obsoleto",
+  });
+  assert.deepEqual(staleUpdate, { conflict: true, version: 2 });
+
+  await database.saveCustomerWarranty(`email:${adminEmail}`, "2027-02-28", adminEmail);
+  warrantySaved = true;
+  assert.equal((await database.listCustomerWarranties())[ `email:${adminEmail}` ], "2027-02-28");
+
+  const inventoryItem = {
+    id: inventoryId,
+    item: "Integration item",
+    sku: `SKU-${firstId}`,
+    category: "Test",
+    stock: 2,
+    minimum: 1,
+    cost: 100,
+    supplier: "Test supplier",
+  };
+  await database.createInventoryItem(inventoryItem);
+  inventoryCreated = true;
+  const concurrentMovements = await Promise.all([
+    database.adjustInventoryStock(inventoryId, -1),
+    database.adjustInventoryStock(inventoryId, -1),
+  ]);
+  assert.deepEqual(concurrentMovements.map(({ stock }) => stock).sort(), [0, 1]);
+  assert.deepEqual(await database.adjustInventoryStock(inventoryId, -1), { conflict: true, stock: 0 });
+  const updatedInventory = await database.updateInventoryItem(
+    inventoryId,
+    { ...inventoryItem, minimum: 3 },
+    0,
+  );
+  assert.equal(updatedInventory.stock, 0);
+  assert.equal(updatedInventory.minimum, 3);
+  assert.equal(await database.deleteInventoryItem(inventoryId), true);
+  inventoryCreated = false;
 
   const account = await database.getOrCreatePhoneAccount(phone);
   phoneAccountCreated = true;
@@ -83,9 +148,15 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   assert.equal(await database.lookupRepair(ids[1], phone), null);
   assert.equal(await database.lookupRepair(ids[2], phone), null);
 
-  await database.saveRepairs(account, [
-    { id: ids[4], customer: "Client-created", phone: account.phone, device: "Equipo", problem: "Falla", status: "Entregado", updated: "hoy" },
-  ]);
+  await database.createRepair(account, {
+    id: ids[4],
+    customer: "Client-created",
+    phone: account.phone,
+    device: "Equipo",
+    problem: "Falla",
+    status: "Entregado",
+    updated: "hoy",
+  });
   const owned = await database.listRepairs(account);
   assert.equal(owned.find(({ id }) => id === ids[4])?.status, "Recibido");
 });

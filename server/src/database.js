@@ -32,6 +32,19 @@ const schema = [
     CONSTRAINT repairs_owner_email_fk FOREIGN KEY (owner_email)
       REFERENCES accounts(email) ON DELETE SET NULL
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
+  `CREATE TABLE IF NOT EXISTS repair_revisions (
+    repair_id VARCHAR(12) NOT NULL PRIMARY KEY,
+    version BIGINT UNSIGNED NOT NULL DEFAULT 1,
+    CONSTRAINT repair_revisions_repair_fk FOREIGN KEY (repair_id)
+      REFERENCES repairs(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
+  `CREATE TABLE IF NOT EXISTS customer_warranties (
+    customer_key VARCHAR(280) NOT NULL PRIMARY KEY,
+    expires_on DATE NULL,
+    updated_by VARCHAR(254) NOT NULL,
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+      ON UPDATE CURRENT_TIMESTAMP(3)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
   `CREATE TABLE IF NOT EXISTS app_counters (
     counter_key VARCHAR(64) NOT NULL PRIMARY KEY,
     value BIGINT UNSIGNED NOT NULL
@@ -79,6 +92,7 @@ function mapRepair(row) {
     photos: parseJson(row.photos, []),
     contactEmail: row.contact_email || undefined,
     whatsappOptIn: Boolean(row.whatsapp_opt_in),
+    version: Number(row.version ?? 1),
   };
 }
 
@@ -100,6 +114,7 @@ export function createDatabase(connectionString, { production = false, sslCa } =
     queueLimit: 0,
     charset: "utf8mb4",
     decimalNumbers: true,
+    dateStrings: ["DATE"],
   });
 
   return {
@@ -109,6 +124,10 @@ export function createDatabase(connectionString, { production = false, sslCa } =
 
     async initialize({ adminEmail, adminPassword, hashPassword }) {
       for (const statement of schema) await pool.query(statement);
+      await pool.execute(
+        `INSERT IGNORE INTO repair_revisions (repair_id, version)
+         SELECT id, 1 FROM repairs`,
+      );
       await pool.execute(
         `INSERT INTO app_counters (counter_key, value)
          SELECT 'repair', GREATEST(1000, COALESCE(MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)), 1000))
@@ -240,9 +259,15 @@ export function createDatabase(connectionString, { production = false, sslCa } =
 
     async listRepairs(account) {
       const [rows] = account.role === "admin"
-        ? await pool.execute("SELECT * FROM repairs ORDER BY id")
+        ? await pool.execute(
+            `SELECT repairs.*, COALESCE(repair_revisions.version, 1) AS version
+             FROM repairs LEFT JOIN repair_revisions ON repair_revisions.repair_id = repairs.id
+             ORDER BY repairs.id`,
+          )
         : await pool.execute(
-            "SELECT * FROM repairs WHERE owner_email = ? OR owner_phone = ? ORDER BY id",
+            `SELECT repairs.*, COALESCE(repair_revisions.version, 1) AS version
+             FROM repairs LEFT JOIN repair_revisions ON repair_revisions.repair_id = repairs.id
+             WHERE owner_email = ? OR owner_phone = ? ORDER BY repairs.id`,
             [account.email, account.phone || ""],
           );
       return rows
@@ -252,47 +277,96 @@ export function createDatabase(connectionString, { production = false, sslCa } =
         .map(mapRepair);
     },
 
-    async saveRepairs(account, repairs) {
+    async createRepair(account, repair) {
       const connection = await pool.getConnection();
       try {
         await connection.beginTransaction();
-        for (const repair of repairs) {
-          const ownerEmail = account.role === "admin" ? (repair.ownerEmail || null) : account.email;
-          const ownerPhone = account.role === "admin" ? (repair.ownerPhone || null) : (account.phone || null);
-          const values = [
+        const ownerEmail = account.role === "admin" ? (repair.ownerEmail || null) : account.email;
+        const ownerPhone = account.role === "admin" ? (repair.ownerPhone || null) : (account.phone || null);
+        const status = account.role === "admin" ? repair.status : "Recibido";
+        await connection.execute(
+          `INSERT INTO repairs
+            (id, customer, phone, device, problem, status, updated, created_at, owner_email,
+             owner_phone, authorized_by, signature, photos, contact_email, whatsapp_opt_in)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
             repair.id, repair.customer, repair.phone, repair.device, repair.problem,
-            account.role === "admin" ? repair.status : "Recibido",
-            repair.updated, repair.createdAt || null, ownerEmail, ownerPhone,
+            status, repair.updated, repair.createdAt || null, ownerEmail, ownerPhone,
             repair.authorizedBy || null, repair.signature || null,
             JSON.stringify(repair.photos || []), repair.contactEmail || null,
             repair.whatsappOptIn === true,
-          ];
-          const insert = `INSERT INTO repairs
-            (id, customer, phone, device, problem, status, updated, created_at, owner_email,
-             owner_phone, authorized_by, signature, photos, contact_email, whatsapp_opt_in)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-          if (account.role === "admin") {
-            await connection.execute(
-              `${insert} ON DUPLICATE KEY UPDATE
-                customer = VALUES(customer), phone = VALUES(phone), device = VALUES(device),
-                problem = VALUES(problem), status = VALUES(status), updated = VALUES(updated),
-                created_at = VALUES(created_at), owner_email = VALUES(owner_email),
-                owner_phone = VALUES(owner_phone), authorized_by = VALUES(authorized_by),
-                signature = VALUES(signature), photos = VALUES(photos),
-                contact_email = VALUES(contact_email), whatsapp_opt_in = VALUES(whatsapp_opt_in)`,
-              values,
-            );
-          } else {
-            await connection.execute(`${insert} ON DUPLICATE KEY UPDATE id = id`, values);
-          }
-        }
+          ],
+        );
         await connection.execute(
-          `UPDATE app_counters SET value = GREATEST(value, (
-            SELECT COALESCE(MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)), 1000)
-            FROM repairs WHERE id REGEXP '^REP-[0-9]{4,8}$'
-          )) WHERE counter_key = 'repair'`,
+          "INSERT INTO repair_revisions (repair_id, version) VALUES (?, 1)",
+          [repair.id],
         );
         await connection.commit();
+        return {
+          ...repair,
+          status,
+          ownerEmail: ownerEmail || undefined,
+          ownerPhone: ownerPhone || undefined,
+          version: 1,
+        };
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    },
+
+    async updateRepair(id, expectedVersion, patch) {
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [repairs] = await connection.execute(
+          "SELECT * FROM repairs WHERE id = ? FOR UPDATE",
+          [id],
+        );
+        const row = repairs[0];
+        if (!row) {
+          await connection.rollback();
+          return null;
+        }
+        const [revisions] = await connection.execute(
+          "SELECT version FROM repair_revisions WHERE repair_id = ? FOR UPDATE",
+          [id],
+        );
+        const currentVersion = Number(revisions[0]?.version ?? 1);
+        if (currentVersion !== expectedVersion) {
+          await connection.rollback();
+          return { conflict: true, version: currentVersion };
+        }
+        const assignments = [];
+        const values = [];
+        if (patch.status !== undefined) {
+          assignments.push("status = ?");
+          values.push(patch.status);
+        }
+        if (patch.photos !== undefined) {
+          assignments.push("photos = ?");
+          values.push(JSON.stringify(patch.photos));
+        }
+        assignments.push("updated = ?");
+        values.push(patch.updated, id);
+        await connection.execute(
+          `UPDATE repairs SET ${assignments.join(", ")} WHERE id = ?`,
+          values,
+        );
+        const nextVersion = currentVersion + 1;
+        await connection.execute(
+          `INSERT INTO repair_revisions (repair_id, version) VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE version = VALUES(version)`,
+          [id, nextVersion],
+        );
+        const [updatedRows] = await connection.execute(
+          `SELECT repairs.*, ? AS version FROM repairs WHERE id = ?`,
+          [nextVersion, id],
+        );
+        await connection.commit();
+        return mapRepair(updatedRows[0]);
       } catch (error) {
         await connection.rollback();
         throw error;
@@ -335,7 +409,12 @@ export function createDatabase(connectionString, { production = false, sslCa } =
     },
 
     async getRepairById(id) {
-      const [rows] = await pool.execute("SELECT * FROM repairs WHERE id = ?", [id]);
+      const [rows] = await pool.execute(
+        `SELECT repairs.*, COALESCE(repair_revisions.version, 1) AS version
+         FROM repairs LEFT JOIN repair_revisions ON repair_revisions.repair_id = repairs.id
+         WHERE repairs.id = ?`,
+        [id],
+      );
       return rows[0]
         ? {
             ...rows[0],
@@ -353,6 +432,29 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       const row = rows[0];
       if (!row || !normalizePhone(row.phone) || normalizePhone(row.phone) !== normalizePhone(phone)) return null;
       return { ...mapRepair(row), ownerEmail: undefined, ownerPhone: undefined };
+    },
+
+    async listCustomerWarranties() {
+      const [rows] = await pool.execute(
+        "SELECT customer_key, expires_on FROM customer_warranties ORDER BY customer_key",
+      );
+      return Object.fromEntries(rows.map((row) => [
+        row.customer_key,
+        row.expires_on ? String(row.expires_on).slice(0, 10) : null,
+      ]));
+    },
+
+    async saveCustomerWarranty(customerKey, expiresOn, updatedBy) {
+      if (expiresOn === null) {
+        await pool.execute("DELETE FROM customer_warranties WHERE customer_key = ?", [customerKey]);
+        return;
+      }
+      await pool.execute(
+        `INSERT INTO customer_warranties (customer_key, expires_on, updated_by)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE expires_on = VALUES(expires_on), updated_by = VALUES(updated_by)`,
+        [customerKey, expiresOn, updatedBy],
+      );
     },
 
     async getSetting(key) {
@@ -377,24 +479,83 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       return rows.map((row) => parseJson(row.value, null));
     },
 
-    async saveInventory(items) {
+    async createInventoryItem(item) {
+      await pool.execute(
+        "INSERT INTO inventory (id, value) VALUES (?, ?)",
+        [String(item.id), JSON.stringify(item)],
+      );
+      return item;
+    },
+
+    async updateInventoryItem(id, item, stockDelta) {
       const connection = await pool.getConnection();
       try {
         await connection.beginTransaction();
-        await connection.execute("DELETE FROM inventory");
-        for (const item of items) {
-          await connection.execute(
-            "INSERT INTO inventory (id, value) VALUES (?, ?)",
-            [String(item.id), JSON.stringify(item)],
-          );
+        const [rows] = await connection.execute(
+          "SELECT value FROM inventory WHERE id = ? FOR UPDATE",
+          [id],
+        );
+        if (!rows[0]) {
+          await connection.rollback();
+          return null;
         }
+        const stored = parseJson(rows[0].value, null);
+        const stock = stored.stock + stockDelta;
+        if (!Number.isSafeInteger(stock) || stock < 0) {
+          await connection.rollback();
+          return { conflict: true, stock: stored.stock };
+        }
+        const updated = { ...item, id: stored.id, stock };
+        await connection.execute(
+          "UPDATE inventory SET value = ? WHERE id = ?",
+          [JSON.stringify(updated), id],
+        );
         await connection.commit();
+        return updated;
       } catch (error) {
         await connection.rollback();
         throw error;
       } finally {
         connection.release();
       }
+    },
+
+    async adjustInventoryStock(id, delta) {
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [rows] = await connection.execute(
+          "SELECT value FROM inventory WHERE id = ? FOR UPDATE",
+          [id],
+        );
+        if (!rows[0]) {
+          await connection.rollback();
+          return null;
+        }
+        const item = parseJson(rows[0].value, null);
+        const stock = item.stock + delta;
+        if (!Number.isSafeInteger(stock) || stock < 0) {
+          await connection.rollback();
+          return { conflict: true, stock: item.stock };
+        }
+        const updated = { ...item, stock };
+        await connection.execute(
+          "UPDATE inventory SET value = ? WHERE id = ?",
+          [JSON.stringify(updated), id],
+        );
+        await connection.commit();
+        return updated;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    },
+
+    async deleteInventoryItem(id) {
+      const [result] = await pool.execute("DELETE FROM inventory WHERE id = ?", [id]);
+      return result.affectedRows > 0;
     },
 
     close: () => pool.end(),
