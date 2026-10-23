@@ -8,6 +8,7 @@ import { createRateLimiter } from "../src/rateLimiter.js";
 import { createMysqlSslConfig } from "../src/mysqlTls.js";
 import { createSessionToken, hashPassword } from "../src/auth.js";
 import { createWhatsApp } from "../src/whatsapp.js";
+import { parseCursorPagination } from "../src/validation.js";
 
 // PNG mínimo válido de 1x1.
 const PNG =
@@ -64,6 +65,20 @@ test("config: usa el puerto del entorno y valida su rango", () => {
   assert.equal(loadConfig({ MAIL_DRY_RUN: "true" }).port, 3001);
   assert.throws(() => loadConfig({ PORT: "10000abc", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
   assert.throws(() => loadConfig({ PORT: "65536", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
+});
+
+test("la paginación por cursor comparte límites y valida IDs sin pérdida de precisión", () => {
+  assert.deepEqual(parseCursorPagination(new URLSearchParams()), {
+    beforeId: "18446744073709551615",
+    limit: 50,
+  });
+  assert.deepEqual(parseCursorPagination(new URLSearchParams("beforeId=9007199254740993&limit=100")), {
+    beforeId: "9007199254740993",
+    limit: 100,
+  });
+  assert.equal(parseCursorPagination(new URLSearchParams("beforeId=0")), null);
+  assert.equal(parseCursorPagination(new URLSearchParams("beforeId=18446744073709551616")), null);
+  assert.equal(parseCursorPagination(new URLSearchParams("limit=101")), null);
 });
 
 test("MySQL TLS validates certificates in production and accepts a configured CA", () => {
