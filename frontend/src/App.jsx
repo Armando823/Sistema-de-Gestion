@@ -8,23 +8,19 @@ import {
   authenticateClient,
   authenticateAdmin,
   clearClientSession,
-  readClientSession,
   registerClient,
   saveClientSession,
 } from "./services/accountStorage";
 import {
   deleteSharedRepair,
-  isDesktop,
   lookupSharedRepair,
   nextSharedRepairId,
   loginSharedPhone,
   requestSharedPhoneCode,
   restoreSharedSession,
   sendSharedRepairCode,
-  usesSharedApi,
 } from "./services/dbService";
 import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
-import { getAdminStatus, loginAdmin, setupAdmin } from "./services/adminAuth";
 import { toCsv } from "./utils/csv";
 import { readImage } from "./utils/image";
 import { sendReceiptEmail } from "./services/notifyService";
@@ -151,10 +147,9 @@ function receiptHtml(repair) {
   return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd>${repair.authorizedBy ? `<dt>Recibido por</dt><dd>${escapeHtml(repair.authorizedBy)}</dd>` : ""}</dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${signatureMarkup}</body></html>`;
 }
 
-function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin, onPhoneLogin, onPhoneCodeRequest }) {
-  const [adminLogin, setAdminLogin] = useState(!CLIENT_ENABLED);
+function LoginView({ onClientLogin, onClientRegister, onAdminLogin, onPhoneLogin, onPhoneCodeRequest }) {
+  const [adminLogin, setAdminLogin] = useState(false);
   const [clientAccess, setClientAccess] = useState("welcome");
-  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -162,32 +157,6 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin, onP
   const [phoneCodeSent, setPhoneCodeSent] = useState(false);
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [error, setError] = useState("");
-  const [adminConfigured, setAdminConfigured] = useState(true);
-
-  useEffect(() => {
-    if (!ADMIN_ENABLED || onAdminLogin) return undefined;
-    let active = true;
-    getAdminStatus().then((status) => {
-      if (!active) return;
-      setAdminConfigured(status.configured);
-      if (status.error) setError(status.error);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  async function submit(event) {
-    event.preventDefault();
-    const result = await loginAdmin(username, password);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setError("");
-    setPassword("");
-    onLogin("admin");
-  }
 
   async function submitSharedAdmin(event) {
     event.preventDefault();
@@ -200,32 +169,9 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin, onP
     setPassword("");
   }
 
-  async function submitAdminSetup(event) {
-    event.preventDefault();
-    if (password !== passwordConfirmation) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
-    const created = await setupAdmin(password);
-    if (created.error) {
-      setError(created.error);
-      return;
-    }
-    const result = await loginAdmin("admin", password);
-    if (result.error) {
-      setAdminConfigured(true);
-      setError(result.error);
-      return;
-    }
-    setError("");
-    setPassword("");
-    setPasswordConfirmation("");
-    onLogin("admin");
-  }
-
   function openAdminLogin() {
     setAdminLogin(true);
-    setUsername("");
+    setEmail("");
     setPassword("");
     setError("");
   }
@@ -308,50 +254,17 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin, onP
                 : "Crea una cuenta para consultar y gestionar tus reparaciones."}
           </p>
         </div>
-        {adminLogin && !adminConfigured ? (
-          <form className="login-form" onSubmit={submitAdminSetup}>
-            <p className="login-note">
-              Es la primera vez que se abre el panel. Crea la contraseña del jefe
-              (usuario: <strong>admin</strong>). Guárdala en un lugar seguro.
-            </p>
+        {adminLogin ? (
+          <form className="login-form" onSubmit={submitSharedAdmin}>
             <label>
-              Nueva contraseña
+              Correo del administrador
               <input
                 required
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Mínimo 8 caracteres"
-              />
-            </label>
-            <label>
-              Confirmar contraseña
-              <input
-                required
-                type="password"
-                minLength={8}
-                autoComplete="new-password"
-                value={passwordConfirmation}
-                onChange={(event) => setPasswordConfirmation(event.target.value)}
-                placeholder="Repite la contraseña"
-              />
-            </label>
-            {error && <p className="form-error" role="alert">{error}</p>}
-            <button type="submit" className="primary-button">Crear contraseña y entrar</button>
-          </form>
-        ) : adminLogin ? (
-          <form className="login-form" onSubmit={onAdminLogin ? submitSharedAdmin : submit}>
-            <label>
-              {onAdminLogin ? "Correo del administrador" : "Usuario del jefe"}
-              <input
-                required
-                type={onAdminLogin ? "email" : "text"}
-                autoComplete={onAdminLogin ? "email" : "username"}
-                value={onAdminLogin ? email : username}
-                onChange={(event) => onAdminLogin ? setEmail(event.target.value) : setUsername(event.target.value)}
-                placeholder={onAdminLogin ? "admin@correo.com" : "admin"}
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="admin@correo.com"
               />
             </label>
             <label>
@@ -367,11 +280,9 @@ function LoginView({ onLogin, onClientLogin, onClientRegister, onAdminLogin, onP
             </label>
             {error && <p className="form-error" role="alert">{error}</p>}
             <button type="submit" className="primary-button">Entrar al panel administrativo</button>
-            {CLIENT_ENABLED && (
-              <button type="button" className="private-access" onClick={() => setAdminLogin(false)}>
-                Volver al acceso de cliente
-              </button>
-            )}
+            <button type="button" className="private-access" onClick={() => setAdminLogin(false)}>
+              Volver al acceso de cliente
+            </button>
           </form>
         ) : clientAccess === "welcome" ? (
           <div className="public-access">
@@ -551,45 +462,15 @@ function App({ version = "Final" }) {
       setDataReady(true);
     }
     async function initialize() {
-      if (usesSharedApi()) {
-        const account = await restoreSharedSession();
-        if (account) await loadAccount(account);
-        else if (!cancelled) {
-          setRepairs([]);
-          setRepairsReady(true);
-          setSettingsReady(true);
-          setDataReady(true);
-        }
-        return;
+      const account = await restoreSharedSession();
+      if (account) {
+        await loadAccount(account);
+      } else if (!cancelled) {
+        setRepairs([]);
+        setRepairsReady(true);
+        setSettingsReady(true);
+        setDataReady(true);
       }
-      const [repairsResult, sessionResult, settingsResult] = await Promise.allSettled([
-        loadRepairs(),
-        readClientSession(),
-        readSetting("workshop-settings", {}),
-      ]);
-      if (cancelled) return;
-      const savedRepairs = repairsResult.status === "fulfilled" ? repairsResult.value : [];
-      const sessionEmail = sessionResult.status === "fulfilled" ? sessionResult.value : "";
-      const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
-      setRepairs(savedRepairs);
-      setRepairsReady(repairsResult.status === "fulfilled");
-      setSettingsReady(settingsResult.status === "fulfilled");
-      if (repairsResult.status === "rejected") {
-        setNotice("No se pudieron cargar las órdenes. No se guardarán cambios para proteger los datos existentes.");
-      } else if (settingsResult.status === "rejected") {
-        setNotice("No se pudieron cargar los ajustes para proteger los datos existentes.");
-      }
-      setClientEmail(sessionEmail);
-      setClientPhone("");
-      setRole(
-        isDesktop() && ADMIN_ENABLED && !CLIENT_ENABLED
-          ? "admin"
-          : sessionEmail && CLIENT_ENABLED
-            ? "client"
-            : null,
-      );
-      applySettings(savedSettings);
-      setDataReady(true);
     }
     initialize().catch(() => {
       if (cancelled) return;
@@ -600,7 +481,7 @@ function App({ version = "Final" }) {
       setClientPhone("");
       setRole(null);
       setSettings(defaultSettings);
-      setNotice("No se pudo cargar la base de datos local.");
+      setNotice("No se pudo conectar con el servidor.");
       setDataReady(true);
     });
     return () => {
@@ -608,13 +489,13 @@ function App({ version = "Final" }) {
     };
   }, []);
   useEffect(() => {
-    if ((usesSharedApi() && !role) || !dataReady || !repairsReady) return;
+    if (!role || !dataReady || !repairsReady) return;
     saveRepairs(repairs).then((saved) => {
       if (!saved) setNotice("No se pudieron guardar los cambios en la base de datos compartida.");
     }).catch(() => setNotice("No se pudieron guardar los cambios en la base de datos compartida."));
   }, [dataReady, repairsReady, repairs, role]);
   useEffect(() => {
-    if (!usesSharedApi() || !role || !dataReady || !repairsReady) return undefined;
+    if (!role || !dataReady || !repairsReady) return undefined;
     let active = true;
     let requestInProgress = false;
     let syncFailed = false;
@@ -654,10 +535,12 @@ function App({ version = "Final" }) {
   }, [dataReady, repairsReady, role]);
   useEffect(() => {
     if (dataReady && settingsReady && role === "admin") {
-      saveSetting("workshop-settings", settings);
+      saveSetting("workshop-settings", settings).then((saved) => {
+        if (!saved) setNotice("No se pudieron guardar los ajustes del taller.");
+      }).catch((error) => setNotice(error.message || "No se pudieron guardar los ajustes del taller."));
     }
   }, [dataReady, settingsReady, settings, role]);
-  // El correo de la cuenta se propone en el formulario local; no usar la identidad sintética por teléfono.
+  // El correo se propone en el formulario; no usar la identidad sintética por teléfono.
   useEffect(() => {
     if (!clientEmail || clientPhone) return;
     setClientForm((form) => (form.contactEmail ? form : { ...form, contactEmail: clientEmail }));
@@ -678,16 +561,7 @@ function App({ version = "Final" }) {
     const timestamp = new Date().toISOString();
     let id;
     try {
-      id = usesSharedApi()
-        ? await nextSharedRepairId()
-        : `REP-${
-            Math.max(
-              ...repairs.map(
-                (repair) => Number(repair.id.replace("REP-", "")) || 1000,
-              ),
-              1000,
-            ) + 1
-          }`;
+      id = await nextSharedRepairId();
     } catch (error) {
       setNotice(error.message || "No se pudo reservar un código de reparación.");
       return;
@@ -790,14 +664,12 @@ function App({ version = "Final" }) {
       setNotice(`${confirmation.id} actualizada`);
     }
     if (confirmation?.type === "delete") {
-      if (usesSharedApi()) {
-        try {
-          await deleteSharedRepair(confirmation.id);
-        } catch (error) {
-          setNotice(error.message || "No se pudo eliminar la orden.");
-          setConfirmation(null);
-          return;
-        }
+      try {
+        await deleteSharedRepair(confirmation.id);
+      } catch (error) {
+        setNotice(error.message || "No se pudo eliminar la orden.");
+        setConfirmation(null);
+        return;
       }
       setRepairs((current) =>
         current.filter((repair) => repair.id !== confirmation.id),
@@ -821,7 +693,7 @@ function App({ version = "Final" }) {
 
   function printReceipt(repair) {
     // Con "noopener" window.open devuelve null y la impresión nunca se abría;
-    // se imprime desde un iframe oculto, que funciona igual en navegador y Electron.
+    // se imprime desde un iframe oculto dentro del navegador.
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
     frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
@@ -922,19 +794,17 @@ function App({ version = "Final" }) {
       if (!await saveClientSession(result.account.email)) {
         return { error: "No se pudo guardar la sesión. Inténtalo de nuevo." };
       }
-      if (usesSharedApi()) {
-        try {
-          const [savedRepairs, savedSettings] = await Promise.all([
-            loadRepairs(),
-            readSetting("workshop-settings", {}),
-          ]);
-          setRepairs(savedRepairs);
-          setRepairsReady(true);
-          setSettingsReady(true);
-          setSettings({ ...defaultSettings, ...savedSettings });
-        } catch (error) {
-          return { error: error.message || "No se pudieron cargar los datos compartidos." };
-        }
+      try {
+        const [savedRepairs, savedSettings] = await Promise.all([
+          loadRepairs(),
+          readSetting("workshop-settings", {}),
+        ]);
+        setRepairs(savedRepairs);
+        setRepairsReady(true);
+        setSettingsReady(true);
+        setSettings({ ...defaultSettings, ...savedSettings });
+      } catch (error) {
+        return { error: error.message || "No se pudieron cargar los datos del servidor." };
       }
       setRole(result.account.role || "client");
     }
@@ -976,9 +846,6 @@ function App({ version = "Final" }) {
   }
 
   async function handleAdminLogin(email, password) {
-    if (!usesSharedApi()) {
-      return { error: "El acceso web no está configurado." };
-    }
     const result = await authenticateAdmin(email, password);
     if (!result.account) return result;
     try {
@@ -1007,12 +874,11 @@ function App({ version = "Final" }) {
   if (!role) {
     return (
       <LoginView
-        onLogin={setRole}
         onClientLogin={handleClientLogin}
         onClientRegister={handleClientRegister}
-        onAdminLogin={usesSharedApi() ? handleAdminLogin : undefined}
-        onPhoneLogin={usesSharedApi() ? handlePhoneLogin : undefined}
-        onPhoneCodeRequest={usesSharedApi() ? handlePhoneCodeRequest : undefined}
+        onAdminLogin={handleAdminLogin}
+        onPhoneLogin={handlePhoneLogin}
+        onPhoneCodeRequest={handlePhoneCodeRequest}
       />
     );
   }
@@ -1131,6 +997,7 @@ function App({ version = "Final" }) {
           repairs={repairs}
           settings={settings}
           setSettings={setSettings}
+          onNotice={setNotice}
           filteredRepairs={filteredRepairs}
           onLogout={logout}
           updateStatus={requestStatusChange}
@@ -1202,6 +1069,7 @@ function AdminView({
   openReceipt,
   settings,
   setSettings,
+  onNotice,
 }) {
   const ordersSectionRef = useRef(null);
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -1211,12 +1079,16 @@ function AdminView({
     readSetting("workshop-logo", "").then((savedLogo) => {
       setCompanyLogo(savedLogo || "");
       setLogoReady(true);
-    });
+    }).catch((error) => onNotice(error.message || "No se pudo cargar el logo del taller."));
   }, []);
   useEffect(() => {
     if (!logoReady) return;
-    if (companyLogo) saveSetting("workshop-logo", companyLogo);
-    else deleteSetting("workshop-logo");
+    const save = companyLogo
+      ? saveSetting("workshop-logo", companyLogo)
+      : deleteSetting("workshop-logo");
+    save.then((saved) => {
+      if (!saved) onNotice("No se pudo guardar el logo del taller.");
+    }).catch((error) => onNotice(error.message || "No se pudo guardar el logo del taller."));
   }, [companyLogo, logoReady]);
   const inventoryFallback = [];
   const [inventoryData, setInventoryData] = useState([]);
@@ -1225,10 +1097,14 @@ function AdminView({
     loadInventory().then((savedInventory) => {
       setInventoryData(savedInventory.length > 0 ? savedInventory : inventoryFallback);
       setInventoryReady(true);
-    });
+    }).catch((error) => onNotice(error.message || "No se pudo cargar el inventario."));
   }, []);
   useEffect(() => {
-    if (inventoryReady) saveInventory(inventoryData);
+    if (inventoryReady) {
+      saveInventory(inventoryData).then((saved) => {
+        if (!saved) onNotice("No se pudo guardar el inventario.");
+      }).catch((error) => onNotice(error.message || "No se pudo guardar el inventario."));
+    }
   }, [inventoryData, inventoryReady]);
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("Todos");
@@ -1717,7 +1593,12 @@ function AdminView({
         {activeSection === "settings" && (
           <form className="panel settings-panel" onSubmit={async (event) => {
             event.preventDefault();
-            setSettingsSaved(await saveSetting("workshop-settings", settings));
+            try {
+              setSettingsSaved(await saveSetting("workshop-settings", settings));
+            } catch (error) {
+              setSettingsSaved(false);
+              onNotice(error.message || "No se pudieron guardar los ajustes del taller.");
+            }
           }}>
             <div className="panel-heading">
               <div>
@@ -1748,7 +1629,7 @@ function AdminView({
               <label><input type="checkbox" checked={settings.automaticReport} onChange={() => setSettings({ ...settings, automaticReport: !settings.automaticReport })} />Generar resumen operativo automático</label>
               <label><input type="checkbox" checked={settings.darkMode} onChange={() => setSettings({ ...settings, darkMode: !settings.darkMode })} />Modo oscuro del panel administrativo</label>
             </div>
-            <div className="settings-footer"><small>Configuración guardada localmente.</small><button type="submit" className="inventory-save">Guardar ajustes</button></div>
+            <div className="settings-footer"><small>Configuración guardada en el servidor.</small><button type="submit" className="inventory-save">Guardar ajustes</button></div>
           </form>
         )}
       </main>
@@ -2114,7 +1995,7 @@ function ClientView({
         setResult(ownedRepair);
         return;
       }
-      if (usesSharedApi() && lookupPhone.trim()) {
+      if (lookupPhone.trim()) {
         setResult((await lookupSharedRepair(normalizedCode, lookupPhone)) || false);
         return;
       }

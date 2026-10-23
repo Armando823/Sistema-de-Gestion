@@ -1,6 +1,4 @@
-const electronAPI = typeof window !== "undefined" ? window.electronAPI : null;
 const apiBase = String(import.meta.env?.VITE_API_URL || "").replace(/\/+$/, "");
-const hasSharedApi = Boolean(apiBase);
 const SESSION_KEY = "shared-session";
 
 function readWebSession() {
@@ -12,7 +10,6 @@ function readWebSession() {
 }
 
 async function request(path, options = {}, authenticated = true) {
-  if (!hasSharedApi) throw new Error("El servidor compartido no está configurado.");
   const session = readWebSession();
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
@@ -22,21 +19,13 @@ async function request(path, options = {}, authenticated = true) {
       ...options.headers,
     },
   });
-  const data = await response.json().catch(() => ({}));
+  const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `Error ${response.status} del servidor.`);
   return data;
 }
 
 export function usesSharedApi() {
-  return shouldUseSharedApi({
-    isDesktop: Boolean(electronAPI),
-    hasApiUrl: hasSharedApi,
-    isProduction: import.meta.env?.PROD === true,
-  });
-}
-
-export function shouldUseSharedApi({ isDesktop, hasApiUrl, isProduction }) {
-  return !isDesktop && (hasApiUrl || isProduction);
+  return true;
 }
 
 export async function loginSharedAccount(email, password) {
@@ -79,7 +68,6 @@ export async function registerSharedAccount(email, password) {
 }
 
 export async function restoreSharedSession() {
-  if (!usesSharedApi()) return null;
   const session = readWebSession();
   if (!session?.token) return null;
   try {
@@ -119,189 +107,55 @@ export async function deleteSharedRepair(id) {
   await request(`/api/repairs/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-function readLocal(key, fallback) {
-  const value = localStorage.getItem(key);
-  return value === null ? fallback : JSON.parse(value);
-}
-
-function writeLocal(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function isDesktop() {
-  return Boolean(electronAPI);
-}
-
 export async function loadRepairs() {
-  if (usesSharedApi()) return (await request("/api/repairs")).repairs;
-  return electronAPI
-    ? await electronAPI.repairs.list()
-    : readLocal("repairs", []);
+  return (await request("/api/repairs")).repairs;
 }
 
 export async function saveRepairs(repairs) {
   try {
-    if (usesSharedApi()) {
-      await request("/api/repairs", { method: "PUT", body: JSON.stringify({ repairs }) });
-      return true;
-    }
-    return electronAPI
-      ? await electronAPI.repairs.save(repairs)
-      : writeLocal("repairs", repairs);
-  } catch {
-    return false;
-  }
-}
-
-export async function listAccounts() {
-  if (usesSharedApi()) return [];
-  return electronAPI
-    ? await electronAPI.accounts.list()
-    : readLocal("client-accounts", []);
-}
-
-export async function createAccount(account) {
-  try {
-    if (usesSharedApi()) {
-      await registerSharedAccount(account.email, account.password);
-      return true;
-    }
-    if (electronAPI) return await electronAPI.accounts.create(account);
-    const accounts = await listAccounts();
-    return writeLocal("client-accounts", [...accounts, account]);
-  } catch {
-    return false;
-  }
-}
-
-export async function updateAccountPassword(email, passwordHash) {
-  try {
-    if (usesSharedApi()) return false;
-    if (electronAPI) return await electronAPI.accounts.updatePassword(email, passwordHash);
-    const accounts = await listAccounts();
-    const account = accounts.find((item) => item.email === email);
-    if (!account) return false;
-    account.passwordHash = passwordHash;
-    return writeLocal("client-accounts", accounts);
+    await request("/api/repairs", { method: "PUT", body: JSON.stringify({ repairs }) });
+    return true;
   } catch {
     return false;
   }
 }
 
 export async function readClientSession() {
-  if (usesSharedApi()) return readWebSession()?.email || "";
-  try {
-    return JSON.parse(sessionStorage.getItem("client-session") || "{}")?.email || "";
-  } catch {
-    return "";
-  }
+  return readWebSession()?.email || "";
 }
 
 export async function saveClientSession(email) {
-  try {
-    if (usesSharedApi()) {
-      const session = readWebSession();
-      if (!session?.token || session.email !== email) return false;
-      return true;
-    }
-    sessionStorage.setItem("client-session", JSON.stringify({ email }));
-    return true;
-  } catch {
-    return false;
-  }
+  const session = readWebSession();
+  return Boolean(session?.token && session.email === email);
 }
 
 export async function clearClientSession() {
-  try {
-    if (usesSharedApi()) {
-      clearSharedSession();
-      return true;
-    }
-    sessionStorage.removeItem("client-session");
-    return true;
-  } catch {
-    return false;
-  }
+  clearSharedSession();
+  return true;
 }
 
 export async function readSetting(key, fallback = null) {
-  if (usesSharedApi()) {
-    return (await request(`/api/settings/${encodeURIComponent(key)}`)).value ?? fallback;
-  }
-  if (electronAPI) {
-    return (await electronAPI.settings.get(key)) ?? fallback;
-  }
-  return readLocal(key, fallback);
+  return (await request(`/api/settings/${encodeURIComponent(key)}`)).value ?? fallback;
 }
 
 export async function saveSetting(key, value) {
-  if (usesSharedApi()) {
-    try {
-      await request(`/api/settings/${encodeURIComponent(key)}`, {
-        method: "PUT",
-        body: JSON.stringify({ value }),
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  if (electronAPI) {
-    try {
-      return await electronAPI.settings.set(key, value);
-    } catch {
-      return false;
-    }
-  }
-  return writeLocal(key, value);
+  await request(`/api/settings/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+  return true;
 }
 
 export async function deleteSetting(key) {
-  if (usesSharedApi()) {
-    try {
-      await request(`/api/settings/${encodeURIComponent(key)}`, { method: "DELETE" });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  if (electronAPI) {
-    try {
-      return await electronAPI.settings.delete(key);
-    } catch {
-      return false;
-    }
-  }
-  try {
-    localStorage.removeItem(key);
-    return true;
-  } catch {
-    return false;
-  }
+  await request(`/api/settings/${encodeURIComponent(key)}`, { method: "DELETE" });
+  return true;
 }
 
 export async function loadInventory() {
-  if (usesSharedApi()) return (await request("/api/inventory")).items;
-  return electronAPI
-    ? await electronAPI.inventory.get()
-    : readLocal("workshop-inventory", []);
+  return (await request("/api/inventory")).items;
 }
 
 export async function saveInventory(items) {
-  try {
-    if (usesSharedApi()) {
-      await request("/api/inventory", { method: "PUT", body: JSON.stringify({ items }) });
-      return true;
-    }
-    return electronAPI
-      ? await electronAPI.inventory.save(items)
-      : writeLocal("workshop-inventory", items);
-  } catch {
-    return false;
-  }
+  await request("/api/inventory", { method: "PUT", body: JSON.stringify({ items }) });
+  return true;
 }

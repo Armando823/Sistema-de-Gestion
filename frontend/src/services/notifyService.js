@@ -1,16 +1,4 @@
-// Envía la constancia de una orden al correo del cliente.
-//  - En la app de escritorio la petición la hace el proceso principal de
-//    Electron (preload -> notify.receipt), que conoce la URL y la clave del
-//    servidor de notificaciones (ver server/README.md).
-//  - En desarrollo web (npm run dev) usa VITE_NOTIFY_URL si está definida.
-import { sendSharedNotification, usesSharedApi } from "./dbService";
-
-const electronAPI = typeof window !== "undefined" ? window.electronAPI : null;
-const NOT_CONFIGURED = {
-  ok: false,
-  code: "not_configured",
-  message: "El envío de correos no está configurado.",
-};
+import { sendSharedNotification } from "./dbService";
 
 export function buildReceiptPayload(repair, email) {
   return {
@@ -30,27 +18,12 @@ export function buildReceiptPayload(repair, email) {
 }
 
 export async function sendReceiptEmail(repair, email) {
-  const payload = buildReceiptPayload(repair, email);
   try {
-    if (electronAPI?.notify) return await electronAPI.notify.receipt(payload);
-    if (usesSharedApi()) {
-      const result = await sendSharedNotification(payload);
-      return result.ok ? { ok: true } : NOT_CONFIGURED;
-    }
-
-    const baseUrl = String(import.meta.env?.VITE_NOTIFY_URL || "").replace(/\/+$/, "");
-    if (!baseUrl) return NOT_CONFIGURED;
-    const apiKey = import.meta.env?.VITE_NOTIFY_API_KEY; // solo para desarrollo
-    const response = await fetch(`${baseUrl}/api/notifications/receipt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(apiKey ? { "X-Api-Key": apiKey } : {}) },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(20_000),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (response.ok && data.ok) return { ok: true };
-    return { ok: false, code: "server_error", message: data.error || `Error ${response.status} del servidor de correo.` };
-  } catch {
-    return { ok: false, code: "network", message: "No se pudo conectar con el servidor de correo." };
+    const result = await sendSharedNotification(buildReceiptPayload(repair, email));
+    return result.ok
+      ? { ok: true }
+      : { ok: false, code: "server_error", message: result.error || "No se pudo enviar la constancia." };
+  } catch (error) {
+    return { ok: false, code: "network", message: error.message || "No se pudo conectar con el servidor." };
   }
 }

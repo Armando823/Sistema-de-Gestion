@@ -22,11 +22,11 @@ try {
 const mailer = await createMailer(config, log);
 const whatsapp = createWhatsApp(config);
 let database;
-if (config.production && !config.databaseUrl) {
-  log.error("DATABASE_URL es obligatoria para el servicio web en producción.");
+if (!config.mysqlUrl) {
+  log.error("MYSQL_URL es obligatoria para iniciar el servidor.");
   process.exit(1);
 }
-if (config.databaseUrl) {
+{
   if (config.sessionSecret.length < 32) {
     log.error("SESSION_SECRET debe tener al menos 32 caracteres.");
     process.exit(1);
@@ -44,18 +44,18 @@ if (config.databaseUrl) {
     process.exit(1);
   }
   try {
-    database = createDatabase(config.databaseUrl, {
+    database = createDatabase(config.mysqlUrl, {
       production: config.production,
-      sslCa: config.databaseSslCa,
+      sslCa: config.mysqlSslCa,
     });
     await database.initialize({
       adminEmail: config.adminEmail,
       adminPassword: config.adminPassword,
       hashPassword,
     });
-    log.info("Base de datos PostgreSQL lista.");
+    log.info("Base de datos MySQL lista.");
   } catch (error) {
-    log.error(`No se pudo preparar PostgreSQL: ${error.message}`);
+    log.error(`No se pudo preparar MySQL: ${error.message}`);
     await database?.close();
     process.exit(1);
   }

@@ -245,7 +245,9 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
         const passwordHash = await hashPassword(body.password);
         await database.createAccount(email, passwordHash);
       } catch (error) {
-        if (error.code === "23505") throw new HttpError(409, "Ya existe una cuenta con ese correo.");
+        if (["23505", "ER_DUP_ENTRY"].includes(error.code)) {
+          throw new HttpError(409, "Ya existe una cuenta con ese correo.");
+        }
         throw error;
       }
       account = { email, role: "client" };
@@ -417,7 +419,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
 
     const session = getSession(req);
     const authorizedWithApiKey = config.apiKey && sameSecret(req.headers["x-api-key"], config.apiKey);
-    if (config.apiKey && !authorizedWithApiKey && !session) {
+    if (!authorizedWithApiKey && !session) {
       throw new HttpError(401, "No autorizado.");
     }
     if (!String(req.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
@@ -543,7 +545,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       } else {
         log.error(`Error inesperado: ${error?.stack || error}`);
         if (!res.headersSent) {
-          const status = error?.code === "23505" ? 409 : 500;
+          const status = ["23505", "ER_DUP_ENTRY"].includes(error?.code) ? 409 : 500;
           send(res, status, { ok: false, error: status === 409 ? "El registro ya existe." : "Error interno." }, cors);
         }
       }

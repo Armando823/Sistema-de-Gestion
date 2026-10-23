@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Servicio que envía por correo la constancia de reparación al cliente",
+  "description": "API central del sistema web de gestión de reparaciones",
   "main": "src/index.js",
   "engines": {
     "node": ">=20"
@@ -15,7 +15,7 @@
     "test:integration": "node --test test/database.integration.test.mjs"
   },
   "dependencies": {
-    "nodemailer": "^10.0.15",
-    "pg": "^8.23.1"
+    "mysql2": "^3.24.6",
+    "nodemailer": "^10.0.15"
   }
 }

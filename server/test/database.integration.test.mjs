@@ -1,18 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomInt } from "node:crypto";
-import pg from "pg";
+import mysql from "mysql2/promise";
 import { createDatabase } from "../src/database.js";
 
-const connectionString = process.env.TEST_DATABASE_URL;
-const { Pool } = pg;
+const connectionString = process.env.MYSQL_TEST_URL;
 
-test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
+test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   skip: !connectionString,
 }, async (t) => {
   const testUrl = new URL(connectionString);
   if (!["localhost", "127.0.0.1", "::1"].includes(testUrl.hostname) || !testUrl.pathname.endsWith("_test")) {
-    throw new Error("TEST_DATABASE_URL solo puede apuntar a PostgreSQL local cuyo nombre termine en _test.");
+    throw new Error("MYSQL_TEST_URL solo puede apuntar a MySQL local cuyo nombre termine en _test.");
   }
   const database = createDatabase(connectionString);
   const firstId = randomInt(10_000_000, 99_999_994);
@@ -27,19 +26,22 @@ test("PostgreSQL asocia y consulta teléfonos solo con coincidencia E.164 exacta
   t.after(async () => {
     try {
       if (initialized) {
-        const cleanup = new Pool({ connectionString });
+        const cleanup = await mysql.createConnection(connectionString);
         try {
           if (seeded) {
-            await cleanup.query("DELETE FROM repairs WHERE id = ANY($1::text[])", [ids]);
+            await cleanup.execute(
+              `DELETE FROM repairs WHERE id IN (${ids.map(() => "?").join(", ")})`,
+              ids,
+            );
           }
           if (phoneAccountCreated) {
-            await cleanup.query("DELETE FROM phone_login_codes WHERE phone = $1", [phone]);
-            await cleanup.query(
-              "DELETE FROM accounts WHERE email = ANY($1::text[]) OR phone = $2",
-              [[adminEmail, phoneEmail], phone],
+            await cleanup.execute("DELETE FROM phone_login_codes WHERE phone = ?", [phone]);
+            await cleanup.execute(
+              "DELETE FROM accounts WHERE email IN (?, ?) OR phone = ?",
+              [adminEmail, phoneEmail, phone],
             );
           } else {
-            await cleanup.query("DELETE FROM accounts WHERE email = $1", [adminEmail]);
+            await cleanup.execute("DELETE FROM accounts WHERE email = ?", [adminEmail]);
           }
         } finally {
           await cleanup.end();

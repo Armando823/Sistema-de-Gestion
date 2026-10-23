@@ -1,29 +1,14 @@
 {
-  "name": "sistema-de-gestion-electron",
+  "name": "sistema-de-gestion-web",
   "version": "0.1.0",
   "private": true,
-  "main": "main.js",
-  "description": "Sistema local de gestión de reparaciones para Taller Digital",
+  "description": "Sistema web centralizado de gestión de reparaciones para Taller Digital",
   "author": "Taller Digital",
   "scripts": {
-    "build": "npm --prefix frontend run build:client",
-    "build:admin": "npm --prefix frontend run build:admin",
-    "build:client": "npm --prefix frontend run build:client",
-    "start": "npm run build:client && electron .",
-    "start:admin": "npm run build:admin && electron .",
-    "start:client": "npm run build:client && electron .",
-    "electron": "electron .",
-    "dist:admin": "npm run build:admin && electron-builder --win nsis --config electron-builder.admin.json",
-    "dist:client": "npm run build:client && electron-builder --win nsis --config electron-builder.client.json",
-    "postinstall": "electron-builder install-app-deps",
-    "test": "node --test test/adminAuth.test.js test/dbInput.test.js test/repairAccess.test.mjs test/csv.test.mjs test/notifier.test.js test/repairValidation.test.mjs test/sharedApiMode.test.mjs server/test/server.test.mjs",
+    "build": "npm --prefix frontend run build",
+    "dev": "npm --prefix frontend run dev",
+    "start": "npm --prefix server start",
+    "test": "node --test test/repairAccess.test.mjs test/csv.test.mjs test/repairValidation.test.mjs test/sharedApiMode.test.mjs server/test/server.test.mjs",
     "server": "npm --prefix server start"
-  },
-  "dependencies": {
-    "better-sqlite3": "^12.4.1"
-  },
-  "devDependencies": {
-    "electron": "^42.11.18",
-    "electron-builder": "^26.18.0"
   }
 }

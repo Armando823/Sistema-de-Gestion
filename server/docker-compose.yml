@@ -1,8 +1,35 @@
 services:
-  notificaciones:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: taller_digital
+      MYSQL_USER: taller
+      MYSQL_PASSWORD: local-dev-only
+      MYSQL_ROOT_PASSWORD: local-root-only
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-plocal-root-only"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
     build: .
     restart: unless-stopped
     env_file: .env
-    # Solo escucha en la propia máquina; nginx/Caddy publican el https.
+    environment:
+      NODE_ENV: development
+      MYSQL_URL: mysql://taller:local-dev-only@mysql:3306/taller_digital
+      MAIL_DRY_RUN: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
     ports:
       - "127.0.0.1:3001:3001"
+
+volumes:
+  mysql-data:
