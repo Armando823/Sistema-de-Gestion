@@ -9,11 +9,11 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 - `frontend/src/App.jsx` sigue coordinando autenticación, sesión, órdenes, sincronización, importación, notificaciones y constancias; `AdminView.jsx` también combina navegación, inventario, clientes, reportes y ajustes.
 - `frontend/src/index.css` concentra estilos de múltiples versiones y superficies en una hoja extensa, con reglas repetidas y difíciles de modificar con confianza.
 - La lista de clientes se deriva de las órdenes existentes; las garantías ahora se guardan en MySQL, aunque todavía no existe una entidad independiente para clientes sin órdenes.
-- Las órdenes ya no se guardan como una lista global: se crean y actualizan mediante operaciones específicas, con versión para rechazar cambios obsoletos. El sondeo de órdenes aún consulta la lista cada tres segundos.
+- Las órdenes ya no se guardan como una lista global: se crean y actualizan mediante operaciones específicas, con versión para rechazar cambios obsoletos. El cliente consulta cada tres segundos, pero usa ETag y no descarga la lista si la revisión no cambió.
 - El inventario ya no reemplaza la lista completa: cada alta, edición, eliminación y movimiento de stock tiene una operación acotada; los cambios de stock se serializan en MySQL y rechazan saldos negativos.
-- `server/src/app.js` contiene el enrutamiento y la lógica de varios dominios en un solo módulo.
-- `server/src/database.js` crea tablas al iniciar con `CREATE TABLE IF NOT EXISTS`; no hay una secuencia versionada de migraciones para evolucionar el esquema de forma controlada.
-- Hay pruebas unitarias y de servidor, además de una prueba MySQL de integración; no se observan pruebas automatizadas de componentes o flujos de navegador.
+- `server/src/app.js` conserva composición HTTP, autenticación de sesión y utilidades compartidas; los handlers de autenticación, órdenes, administración, ajustes y notificaciones están separados bajo `server/src/routes/`.
+- El esquema se evoluciona con migraciones SQL versionadas ejecutadas explícitamente; el inicio normal de la API no aplica cambios de esquema.
+- Hay pruebas unitarias/de servidor y pruebas de integración MySQL; todavía no hay pruebas automatizadas de componentes ni flujos de navegador.
 - Las fotos y firmas se mantienen como cadenas base64 en el flujo de órdenes; su costo de almacenamiento, transferencia y escritura debe medirse antes de decidir cómo optimizarlas, sin introducir otro almacén de persistencia.
 
 ## Plan por etapas
@@ -42,7 +42,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 ### 2. Endurecer contratos y estructura de la API
 
 - [x] Separar `server/src/app.js` por rutas/dominios (autenticación, órdenes, clientes, inventario, ajustes y notificaciones), conservando una única composición de aplicación. Los handlers viven en `server/src/routes/auth.js`, `server/src/routes/repairs.js`, `server/src/routes/admin.js`, `server/src/routes/settings.js` y `server/src/routes/notifications.js`; las garantías de clientes se mantienen en el módulo administrativo existente.
-- Extraer validadores de entrada compartidos por endpoint y responder con errores consistentes, sin exponer detalles internos del servidor o SQL.
+- En curso: compartir validación de paginación por cursor entre historiales de órdenes e inventario (`server/src/validation.js`); continuar con validadores comunes donde los contratos coincidan, conservando errores HTTP específicos por ruta.
 - Definir explícitamente autorización por rol y propiedad para cada operación, especialmente lectura de fotos/constancias, cambios de estado, importación, inventario y ajustes.
 - Normalizar fechas, zonas horarias, moneda y formatos de teléfono en límites claros de la API y la base.
 - Añadir límites paginados/filtros en las listas si las mediciones muestran que el volumen esperado lo requiere; evitar devolver imágenes base64 en consultas que no las necesitan.
@@ -114,7 +114,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 6. Pruebas E2E, lint/formato y accesibilidad.
 7. Rendimiento medido, operación, backups y documentación.
 
-**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, la validación/restauración administrativa de respaldos y la sincronización condicional de órdenes. Continúan pendientes las etapas posteriores de modularización, seguridad, cobertura y operación.
+**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, la validación/restauración administrativa de respaldos y la sincronización condicional de órdenes. La modularización de las rutas API por dominio también está completada; continúan pendientes la extracción de validadores compartidos, la modularización del frontend, seguridad, cobertura y operación.
 
 Cada etapa debe ser un conjunto pequeño de cambios revisables. No cambiar simultáneamente el modelo de datos, autenticación y toda la UI; desplegar cada paso tras sus pruebas para reducir riesgo y facilitar reversión.
 

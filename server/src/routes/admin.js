@@ -1,3 +1,5 @@
+import { parseCursorPagination } from "../validation.js";
+
 function isValidWarrantyDate(value) {
   if (value === null) return true;
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -68,20 +70,14 @@ export function createAdminHandlers({ database, requireDatabase, requireAdmin, r
     }
     if (req.method === "GET" && pathname === "/api/inventory/movements") {
       const query = new URL(req.url, "http://localhost").searchParams;
-      const beforeId = query.get("beforeId");
-      const limit = query.has("limit") ? Number(query.get("limit")) : 50;
-      if ((beforeId !== null &&
-            (!/^[1-9]\d{0,19}$/.test(beforeId) || BigInt(beforeId) > 18446744073709551615n)) ||
-          !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      const pagination = parseCursorPagination(query);
+      if (!pagination) {
         throw new HttpError(422, "Los parámetros de paginación no son válidos.");
       }
-      const movements = await database.listInventoryMovements({
-        beforeId: beforeId || "18446744073709551615",
-        limit,
-      });
+      const movements = await database.listInventoryMovements(pagination);
       send(res, 200, {
         movements,
-        nextBeforeId: movements.length === limit ? movements[movements.length - 1].id : null,
+        nextBeforeId: movements.length === pagination.limit ? movements[movements.length - 1].id : null,
       }, cors);
       return;
     }

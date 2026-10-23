@@ -1,4 +1,5 @@
 import { normalizePhone } from "../phone.js";
+import { parseCursorPagination } from "../validation.js";
 
 const repairStatuses = [
   "Recibido",
@@ -186,20 +187,16 @@ export function createRepairHandlers({
     if (req.method === "GET" && historyMatch) {
       requireAdmin(req);
       const query = new URL(req.url, "http://localhost").searchParams;
-      const beforeId = query.get("beforeId");
-      const limit = query.has("limit") ? Number(query.get("limit")) : 50;
-      if ((beforeId !== null &&
-            (!/^[1-9]\d{0,19}$/.test(beforeId) || BigInt(beforeId) > 18446744073709551615n)) ||
-          !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      const pagination = parseCursorPagination(query);
+      if (!pagination) {
         throw new HttpError(422, "Los parámetros de paginación no son válidos.");
       }
       const history = await database.listRepairStatusHistory(historyMatch[1], {
-        beforeId: beforeId || "18446744073709551615",
-        limit,
+        ...pagination,
       });
       send(res, 200, {
         history,
-        nextBeforeId: history.length === limit ? history[history.length - 1].id : null,
+        nextBeforeId: history.length === pagination.limit ? history[history.length - 1].id : null,
       }, cors);
       return;
     }
