@@ -34,6 +34,25 @@ una base terminada en `_test` y ejecuta `npm run test:integration`.
 La prueba de integración solo acepta MySQL local y una base cuyo nombre termine
 en `_test`; no la apuntes a datos reales.
 
+## Persistencia de órdenes, garantías e inventario
+
+Las órdenes se crean con `POST /api/repairs` y sus cambios administrativos se
+envían mediante `PATCH /api/repairs/:id` con la versión leída por el cliente. Si
+otra sesión guardó primero, la API responde `409` para evitar sobrescribir su
+cambio. La lista de órdenes no admite reemplazo global.
+
+Las garantías se consultan y guardan en `/api/customers/warranties`; las rutas
+requieren una sesión administrativa. El inventario también requiere ese rol y se
+modifica por elemento:
+
+- `POST /api/inventory` crea un repuesto.
+- `PUT /api/inventory/:id` edita sus datos y aplica el delta de stock indicado.
+- `DELETE /api/inventory/:id` elimina un repuesto.
+- `PATCH /api/inventory/:id/stock` aplica un delta entero a las existencias.
+
+Los movimientos se serializan en MySQL y responden `409` si dejarían existencias
+negativas. No se admite reemplazar la colección completa.
+
 ## Configuración
 
 | Variable | Uso |

@@ -107,17 +107,22 @@ export async function deleteSharedRepair(id) {
   await request(`/api/repairs/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export async function loadRepairs() {
-  return (await request("/api/repairs")).repairs;
+export async function createSharedRepair(repair) {
+  return (await request("/api/repairs", {
+    method: "POST",
+    body: JSON.stringify({ repair }),
+  })).repair;
 }
 
-export async function saveRepairs(repairs) {
-  try {
-    await request("/api/repairs", { method: "PUT", body: JSON.stringify({ repairs }) });
-    return true;
-  } catch {
-    return false;
-  }
+export async function updateSharedRepair(id, expectedVersion, patch) {
+  return (await request(`/api/repairs/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ expectedVersion, patch }),
+  })).repair;
+}
+
+export async function loadRepairs() {
+  return (await request("/api/repairs")).repairs;
 }
 
 export async function readClientSession() {
@@ -155,7 +160,39 @@ export async function loadInventory() {
   return (await request("/api/inventory")).items;
 }
 
-export async function saveInventory(items) {
-  await request("/api/inventory", { method: "PUT", body: JSON.stringify({ items }) });
+export async function createInventoryItem(item) {
+  return (await request("/api/inventory", {
+    method: "POST",
+    body: JSON.stringify({ item }),
+  })).item;
+}
+
+export async function updateInventoryItem(item, stockDelta) {
+  return (await request(`/api/inventory/${encodeURIComponent(item.id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ item, stockDelta }),
+  })).item;
+}
+
+export async function adjustInventoryStock(id, delta) {
+  return (await request(`/api/inventory/${encodeURIComponent(id)}/stock`, {
+    method: "PATCH",
+    body: JSON.stringify({ delta }),
+  })).item;
+}
+
+export async function deleteInventoryItem(id) {
+  await request(`/api/inventory/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function loadCustomerWarranties() {
+  return (await request("/api/customers/warranties")).warranties;
+}
+
+export async function saveCustomerWarranty(customerKey, expiresOn) {
+  await request("/api/customers/warranties", {
+    method: "PUT",
+    body: JSON.stringify({ customerKey, expiresOn }),
+  });
   return true;
 }

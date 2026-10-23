@@ -137,7 +137,11 @@ test("API web: registro público crea clientes, el login emite sesión y protege
     },
     async getAccount(email) { return accounts.get(email) || null; },
     async listRepairs() { return []; },
-    async saveRepairs(account, repairs) { savedRepairs.push({ account, repairs }); },
+    async createRepair(account, newRepair) {
+      const created = { ...newRepair, status: "Recibido", version: 1 };
+      savedRepairs.push({ account, repair: created });
+      return created;
+    },
     async nextRepairId() {
       nextRepairNumber += 1;
       return `REP-${String(nextRepairNumber).padStart(4, "0")}`;
@@ -166,15 +170,15 @@ test("API web: registro público crea clientes, el login emite sesión y protege
     const { token, account } = await login.json();
     assert.equal(account.role, "client");
     const clientCreate = await fetch(`${app.url}/api/repairs`, {
-      method: "PUT",
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ repairs: [{ ...repair, status: "Entregado" }] }),
+      body: JSON.stringify({ repair: { ...repair, status: "Entregado" } }),
     });
-    assert.equal(clientCreate.status, 200);
-    assert.equal(savedRepairs[0].repairs[0].status, "Recibido");
+    assert.equal(clientCreate.status, 201);
+    assert.equal(savedRepairs[0].repair.status, "Recibido");
     assert.equal((await fetch(`${app.url}/api/repairs`)).status, 401);
     const repairs = await fetch(`${app.url}/api/repairs`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -203,6 +207,167 @@ test("API web: registro público crea clientes, el login emite sesión y protege
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(forbidden.status, 403);
+  } finally {
+    await app.close();
+  }
+});
+
+test("órdenes usan mutaciones versionadas y garantías solo son editables por administración", async () => {
+  const config = makeConfig();
+  const admin = { email: "admin@taller.com", role: "admin" };
+  const client = { email: "cliente@correo.com", role: "client" };
+  const storedWarranties = {};
+  const inventory = new Map();
+  let repairVersion = 1;
+  const database = {
+    async createRepair(account, newRepair) {
+      return { ...newRepair, status: account.role === "admin" ? newRepair.status : "Recibido", version: 1 };
+    },
+    async updateRepair(id, expectedVersion, patch) {
+      if (expectedVersion !== repairVersion) return { conflict: true, version: repairVersion };
+      repairVersion += 1;
+      return { ...repair, ...patch, id, version: repairVersion };
+    },
+    async listCustomerWarranties() { return { ...storedWarranties }; },
+    async saveCustomerWarranty(key, expiresOn, updatedBy) {
+      if (expiresOn === null) delete storedWarranties[key];
+      else storedWarranties[key] = expiresOn;
+      assert.equal(updatedBy, admin.email);
+    },
+    async loadInventory() { return [...inventory.values()]; },
+    async createInventoryItem(item) {
+      if (inventory.has(item.id)) throw Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" });
+      inventory.set(item.id, item);
+      return item;
+    },
+    async updateInventoryItem(id, item, stockDelta) {
+      const current = inventory.get(id);
+      if (!current) return null;
+      if (current.stock + stockDelta < 0) return { conflict: true, stock: current.stock };
+      const updated = { ...item, stock: current.stock + stockDelta };
+      inventory.set(id, updated);
+      return updated;
+    },
+    async adjustInventoryStock(id, delta) {
+      const current = inventory.get(id);
+      if (!current) return null;
+      if (current.stock + delta < 0) return { conflict: true, stock: current.stock };
+      const updated = { ...current, stock: current.stock + delta };
+      inventory.set(id, updated);
+      return updated;
+    },
+    async deleteInventoryItem(id) { return inventory.delete(id); },
+  };
+  const app = await start({ config, database });
+  const clientToken = createSessionToken(client, config.sessionSecret);
+  const adminToken = createSessionToken(admin, config.sessionSecret);
+  const headers = (token) => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  });
+  try {
+    const created = await fetch(`${app.url}/api/repairs`, {
+      method: "POST",
+      headers: headers(clientToken),
+      body: JSON.stringify({ repair }),
+    });
+    assert.equal(created.status, 201);
+    assert.equal((await created.json()).repair.version, 1);
+
+    const forbiddenUpdate = await fetch(`${app.url}/api/repairs/REP-1001`, {
+      method: "PATCH",
+      headers: headers(clientToken),
+      body: JSON.stringify({ expectedVersion: 1, patch: { status: "Entregado" } }),
+    });
+    assert.equal(forbiddenUpdate.status, 403);
+
+    const changed = await fetch(`${app.url}/api/repairs/REP-1001`, {
+      method: "PATCH",
+      headers: headers(adminToken),
+      body: JSON.stringify({ expectedVersion: 1, patch: { status: "En diagnóstico" } }),
+    });
+    assert.equal(changed.status, 200);
+    assert.equal((await changed.json()).repair.version, 2);
+
+    const stale = await fetch(`${app.url}/api/repairs/REP-1001`, {
+      method: "PATCH",
+      headers: headers(adminToken),
+      body: JSON.stringify({ expectedVersion: 1, patch: { status: "Entregado" } }),
+    });
+    assert.equal(stale.status, 409);
+
+    const invalidPhotos = await fetch(`${app.url}/api/repairs/REP-1001`, {
+      method: "PATCH",
+      headers: headers(adminToken),
+      body: JSON.stringify({ expectedVersion: 2, patch: { photos: ["data:text/html,<script>"] } }),
+    });
+    assert.equal(invalidPhotos.status, 422);
+
+    const clientWarrantyRead = await fetch(`${app.url}/api/customers/warranties`, {
+      headers: headers(clientToken),
+    });
+    assert.equal(clientWarrantyRead.status, 403);
+
+    const invalidWarranty = await fetch(`${app.url}/api/customers/warranties`, {
+      method: "PUT",
+      headers: headers(adminToken),
+      body: JSON.stringify({ customerKey: "phone:+573001234567", expiresOn: "2026-02-30" }),
+    });
+    assert.equal(invalidWarranty.status, 422);
+
+    const savedWarranty = await fetch(`${app.url}/api/customers/warranties`, {
+      method: "PUT",
+      headers: headers(adminToken),
+      body: JSON.stringify({ customerKey: "phone:+573001234567", expiresOn: "2027-02-28" }),
+    });
+    assert.equal(savedWarranty.status, 200);
+    assert.deepEqual(storedWarranties, { "phone:+573001234567": "2027-02-28" });
+
+    const inventoryItem = {
+      id: "test-item",
+      item: "Pantalla",
+      sku: "LCD-01",
+      category: "Pantallas",
+      stock: 2,
+      minimum: 1,
+      cost: 100,
+      supplier: "Proveedor",
+    };
+    const createdItem = await fetch(`${app.url}/api/inventory`, {
+      method: "POST",
+      headers: headers(adminToken),
+      body: JSON.stringify({ item: inventoryItem }),
+    });
+    assert.equal(createdItem.status, 201);
+    assert.deepEqual((await createdItem.json()).item, inventoryItem);
+
+    const stockOut = await fetch(`${app.url}/api/inventory/test-item/stock`, {
+      method: "PATCH",
+      headers: headers(adminToken),
+      body: JSON.stringify({ delta: -1 }),
+    });
+    assert.equal(stockOut.status, 200);
+    assert.equal((await stockOut.json()).item.stock, 1);
+    const invalidStockOut = await fetch(`${app.url}/api/inventory/test-item/stock`, {
+      method: "PATCH",
+      headers: headers(adminToken),
+      body: JSON.stringify({ delta: -2 }),
+    });
+    assert.equal(invalidStockOut.status, 409);
+
+    const updatedItem = await fetch(`${app.url}/api/inventory/test-item`, {
+      method: "PUT",
+      headers: headers(adminToken),
+      body: JSON.stringify({ item: { ...inventoryItem, stock: 1, minimum: 2 }, stockDelta: 0 }),
+    });
+    assert.equal(updatedItem.status, 200);
+    assert.equal((await updatedItem.json()).item.minimum, 2);
+    assert.equal((await fetch(`${app.url}/api/inventory`, { method: "PUT", headers: headers(adminToken), body: JSON.stringify({ items: [] }) })).status, 404);
+    const deletedItem = await fetch(`${app.url}/api/inventory/test-item`, {
+      method: "DELETE",
+      headers: headers(adminToken),
+    });
+    assert.equal(deletedItem.status, 200);
   } finally {
     await app.close();
   }
@@ -577,9 +742,16 @@ test("CORS solo para orígenes permitidos (preflight y respuesta real)", async (
   const app = await start({ config: makeConfig({ allowedOrigins: ["https://taller.example"] }) });
   const route = `${app.url}/api/notifications/receipt`;
   try {
-    const preflight = await fetch(route, { method: "OPTIONS", headers: { Origin: "https://taller.example" } });
+    const preflight = await fetch(route, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://taller.example",
+        "Access-Control-Request-Method": "PATCH",
+      },
+    });
     assert.equal(preflight.status, 204);
     assert.equal(preflight.headers.get("access-control-allow-origin"), "https://taller.example");
+    assert.match(preflight.headers.get("access-control-allow-methods"), /\bPATCH\b/);
     const real = await post(app.url, goodBody, { Origin: "https://taller.example" });
     assert.equal(real.headers.get("access-control-allow-origin"), "https://taller.example");
     const denied = await fetch(route, { method: "OPTIONS", headers: { Origin: "https://malo.example" } });

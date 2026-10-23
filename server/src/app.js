@@ -100,6 +100,47 @@ function isValidRepair(repair) {
   );
 }
 
+function isValidWarrantyDate(value) {
+  if (value === null) return true;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function isValidCustomerKey(value) {
+  return typeof value === "string" && value.length <= 280 && (
+    /^email:[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ||
+    /^phone:\+?[1-9]\d{6,29}$/.test(value)
+  );
+}
+
+function parseInventoryItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  const rawId = item.id;
+  const id = Number.isSafeInteger(rawId) && rawId >= 0 ? String(rawId) : rawId;
+  const { item: name, sku, category, stock, minimum, cost, supplier } = item;
+  if (
+    typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id) ||
+    typeof name !== "string" || name.trim().length < 1 || name.trim().length > 160 ||
+    typeof sku !== "string" || sku.trim().length < 1 || sku.trim().length > 100 ||
+    typeof category !== "string" || category.trim().length < 1 || category.trim().length > 100 ||
+    typeof supplier !== "string" || supplier.trim().length < 1 || supplier.trim().length > 160 ||
+    !Number.isSafeInteger(stock) || stock < 0 ||
+    !Number.isSafeInteger(minimum) || minimum < 0 ||
+    typeof cost !== "number" || !Number.isFinite(cost) || cost < 0 || cost > Number.MAX_SAFE_INTEGER
+  ) return null;
+  return {
+    id,
+    item: name.trim(),
+    sku: sku.trim().toUpperCase(),
+    category: category.trim(),
+    stock,
+    minimum,
+    cost,
+    supplier: supplier.trim(),
+  };
+}
+
 export function createApp({ config, mailer, database, whatsapp, log = console, now = Date.now, sleep }) {
   const ipLimiter = createRateLimiter({ limit: config.limits.perIpPerHour, windowMs: HOUR, now });
   const emailLimiter = createRateLimiter({ limit: config.limits.perEmailPerHour, windowMs: HOUR, now });
@@ -137,7 +178,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       return {
         "Access-Control-Allow-Origin": origin,
         "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, Authorization",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         Vary: "Origin",
       };
     }
@@ -274,25 +315,74 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       send(res, 200, { repairs: await database.listRepairs(session) }, cors);
       return;
     }
-    if (req.method === "PUT" && pathname === "/api/repairs") {
-      const body = parseJson(await readBody(req, 12_000_000));
-      if (!Array.isArray(body?.repairs) || body.repairs.length > 10_000) {
-        throw new HttpError(422, "La lista de órdenes no es válida.");
+    if (req.method === "POST" && pathname === "/api/repairs") {
+      const body = parseJson(await readBody(req, config.limits.bodyBytes));
+      if (!isValidRepair(body?.repair)) throw new HttpError(422, "La orden no es válida.");
+      const repair = await database.createRepair(session, body.repair);
+      send(res, 201, { repair }, cors);
+      return;
+    }
+    const updateMatch = /^\/api\/repairs\/(REP-\d{4,8})$/.exec(pathname);
+    if (req.method === "PATCH" && updateMatch) {
+      requireAdmin(req);
+      const body = parseJson(await readBody(req, config.limits.bodyBytes));
+      const patch = body?.patch;
+      if (!Number.isSafeInteger(body?.expectedVersion) || body.expectedVersion < 1 ||
+          !patch || typeof patch !== "object" || Array.isArray(patch)) {
+        throw new HttpError(422, "La versión o los cambios de la orden no son válidos.");
       }
-      if (body.repairs.some((repair) => !isValidRepair(repair))) {
-        throw new HttpError(422, "Hay órdenes inválidas en la lista.");
+      const keys = Object.keys(patch);
+      if (keys.length === 0 || keys.some((key) => !["status", "photos"].includes(key))) {
+        throw new HttpError(422, "Solo se permite actualizar el estado o las fotos de la orden.");
       }
-      const repairs = session.role === "admin"
-        ? body.repairs
-        : body.repairs.map((repair) => ({ ...repair, status: "Recibido" }));
-      await database.saveRepairs(session, repairs);
-      send(res, 200, { ok: true }, cors);
+      if (patch.status !== undefined &&
+          !["Recibido", "En diagnóstico", "Esperando repuesto", "En reparación", "Listo para entregar", "Entregado"].includes(patch.status)) {
+        throw new HttpError(422, "El estado de la orden no es válido.");
+      }
+      if (patch.photos !== undefined &&
+          (!Array.isArray(patch.photos) || patch.photos.length > 3 ||
+            patch.photos.some((photo) =>
+              typeof photo !== "string" ||
+              photo.length > 2_500_000 ||
+              !/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(photo),
+            ))) {
+        throw new HttpError(422, "Las fotos de la orden no son válidas.");
+      }
+      const repair = await database.updateRepair(
+        updateMatch[1],
+        body.expectedVersion,
+        { ...patch, updated: new Date(now()).toISOString() },
+      );
+      if (!repair) throw new HttpError(404, "No se encontró la orden.");
+      if (repair.conflict) {
+        throw new HttpError(409, "La orden cambió en otra sesión. Actualiza la lista e inténtalo de nuevo.");
+      }
+      send(res, 200, { repair }, cors);
       return;
     }
     const deleteMatch = /^\/api\/repairs\/(REP-\d{4,8})$/.exec(pathname);
     if (req.method === "DELETE" && deleteMatch) {
       requireAdmin(req);
       await database.deleteRepair(deleteMatch[1]);
+      send(res, 200, { ok: true }, cors);
+      return;
+    }
+    throw new HttpError(404, "No encontrado.");
+  }
+
+  async function handleCustomerWarranties(req, res, pathname, cors) {
+    requireDatabase();
+    const session = requireAdmin(req);
+    if (req.method === "GET" && pathname === "/api/customers/warranties") {
+      send(res, 200, { warranties: await database.listCustomerWarranties() }, cors);
+      return;
+    }
+    if (req.method === "PUT" && pathname === "/api/customers/warranties") {
+      const body = parseJson(await readBody(req, 4_096));
+      if (!isValidCustomerKey(body?.customerKey) || !isValidWarrantyDate(body?.expiresOn)) {
+        throw new HttpError(422, "El cliente o la fecha de garantía no son válidos.");
+      }
+      await database.saveCustomerWarranty(body.customerKey, body.expiresOn, session.email);
       send(res, 200, { ok: true }, cors);
       return;
     }
@@ -359,13 +449,43 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       send(res, 200, { items: await database.loadInventory() }, cors);
       return;
     }
-
-    if (req.method === "PUT" && pathname === "/api/inventory") {
-      const body = parseJson(await readBody(req, 1_000_000));
-      if (!Array.isArray(body?.items) || body.items.length > 10_000) {
-        throw new HttpError(422, "La lista de repuestos no es válida.");
+    if (pathname === "/api/inventory" && req.method === "POST") {
+      const body = parseJson(await readBody(req, 16_384));
+      const item = parseInventoryItem(body?.item);
+      if (!item) throw new HttpError(422, "Los datos del repuesto no son válidos.");
+      await database.createInventoryItem(item);
+      send(res, 201, { item }, cors);
+      return;
+    }
+    const stockMatch = /^\/api\/inventory\/([A-Za-z0-9_-]{1,100})\/stock$/.exec(pathname);
+    if (stockMatch && req.method === "PATCH") {
+      const body = parseJson(await readBody(req, 4_096));
+      if (!Number.isSafeInteger(body?.delta) || body.delta === 0 || Math.abs(body.delta) > 1_000_000) {
+        throw new HttpError(422, "El movimiento de existencias no es válido.");
       }
-      await database.saveInventory(body.items);
+      const item = await database.adjustInventoryStock(stockMatch[1], body.delta);
+      if (!item) throw new HttpError(404, "No se encontró el repuesto.");
+      if (item.conflict) throw new HttpError(409, "El movimiento dejaría existencias negativas.");
+      send(res, 200, { item }, cors);
+      return;
+    }
+    const itemMatch = /^\/api\/inventory\/([A-Za-z0-9_-]{1,100})$/.exec(pathname);
+    if (itemMatch && req.method === "PUT") {
+      const body = parseJson(await readBody(req, 16_384));
+      const item = parseInventoryItem(body?.item);
+      if (!item || item.id !== itemMatch[1] ||
+          !Number.isSafeInteger(body?.stockDelta) || Math.abs(body.stockDelta) > 1_000_000) {
+        throw new HttpError(422, "Los datos del repuesto no son válidos.");
+      }
+      const saved = await database.updateInventoryItem(item.id, item, body.stockDelta);
+      if (!saved) throw new HttpError(404, "No se encontró el repuesto.");
+      if (saved.conflict) throw new HttpError(409, "El cambio dejaría existencias negativas.");
+      send(res, 200, { item: saved }, cors);
+      return;
+    }
+    if (itemMatch && req.method === "DELETE") {
+      const deleted = await database.deleteInventoryItem(itemMatch[1]);
+      if (!deleted) throw new HttpError(404, "No se encontró el repuesto.");
       send(res, 200, { ok: true }, cors);
       return;
     }
@@ -521,11 +641,15 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
         await handleRepairs(req, res, pathname, cors);
         return;
       }
+      if (pathname === "/api/customers/warranties") {
+        await handleCustomerWarranties(req, res, pathname, cors);
+        return;
+      }
       if (pathname.startsWith("/api/settings/")) {
         await handleSettings(req, res, pathname, cors);
         return;
       }
-      if (pathname === "/api/inventory") {
+      if (pathname === "/api/inventory" || pathname.startsWith("/api/inventory/")) {
         await handleInventory(req, res, pathname, cors);
         return;
       }
