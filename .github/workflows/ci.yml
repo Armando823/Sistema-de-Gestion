@@ -36,6 +36,10 @@ jobs:
       # --ignore-scripts: las pruebas del servidor no necesitan dependencias de escritorio.
       - run: npm ci --ignore-scripts
       - run: npm --prefix server ci
+      - name: Aplicar migraciones MySQL
+        run: npm --prefix server run migrate
+        env:
+          MYSQL_URL: ${{ env.MYSQL_TEST_URL }}
       - run: npm test
       - run: npm --prefix server run test:integration
       - run: npm --prefix frontend ci

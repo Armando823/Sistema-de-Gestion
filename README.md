@@ -21,13 +21,15 @@ almacenamiento local como fuente de datos.
 
 Requiere Node.js 20+ y una instancia MySQL 8+. Crea una base MySQL vacía y
 configura `MYSQL_URL`, `SESSION_SECRET`, `ADMIN_EMAIL` y `ADMIN_PASSWORD` en
-`server/.env` (copia `server/.env.example`). El servidor crea el esquema y el
-primer administrador al arrancar; no importa datos de PostgreSQL ni SQLite.
+`server/.env` (copia `server/.env.example`). Aplica el esquema con las
+migraciones antes de iniciar la API; el primer administrador se crea al arrancar.
+No se importan datos desde PostgreSQL ni SQLite.
 
 En dos terminales:
 
 ```bash
 npm --prefix server install
+npm --prefix server run migrate:dev
 npm --prefix server run dev
 ```
 
@@ -38,7 +40,8 @@ npm run dev
 
 Vite reenvía las solicitudes `/api` al servidor local en `http://localhost:3001`.
 Para una compilación estática ejecuta `npm run build`. `npm start` inicia el API;
-la aplicación web se sirve desde el hosting web configurado para el proyecto.
+`npm start` presupone que las migraciones ya se aplicaron. La aplicación web se
+sirve desde el hosting web configurado para el proyecto.
 
 Consulta [`server/README.md`](server/README.md) para variables de entorno,
 configuración de correo/WhatsApp, Docker y despliegue de MySQL.
@@ -60,4 +63,6 @@ npm --prefix server run test:integration
 ```
 
 Las pruebas de integración requieren `MYSQL_TEST_URL` apuntando a una base MySQL
-local cuyo nombre termine en `_test`. CI inicia MySQL 8 para ejecutar esas pruebas.
+local cuyo nombre termine en `_test`. CI inicia MySQL 8 para ejecutar esas pruebas;
+el conjunto de migraciones crea y elimina bases temporales con ese sufijo, por lo
+que el usuario de prueba necesita permisos `CREATE DATABASE` y `DROP DATABASE`.

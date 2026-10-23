@@ -17,6 +17,17 @@ services:
       timeout: 5s
       retries: 10
 
+  migrate:
+    build: .
+    command: ["node", "src/migrate.js"]
+    env_file: .env
+    environment:
+      NODE_ENV: development
+      MYSQL_URL: mysql://taller:local-dev-only@mysql:3306/taller_digital
+    depends_on:
+      mysql:
+        condition: service_healthy
+
   api:
     build: .
     restart: unless-stopped
@@ -26,8 +37,8 @@ services:
       MYSQL_URL: mysql://taller:local-dev-only@mysql:3306/taller_digital
       MAIL_DRY_RUN: "true"
     depends_on:
-      mysql:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:3001:3001"
 

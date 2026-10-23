@@ -1,69 +1,7 @@
 import mysql from "mysql2/promise";
 import { normalizePhone } from "./phone.js";
 import { createMysqlSslConfig } from "./mysqlTls.js";
-
-const schema = [
-  `CREATE TABLE IF NOT EXISTS accounts (
-    email VARCHAR(254) NOT NULL PRIMARY KEY,
-    password_hash VARCHAR(255) NULL,
-    role ENUM('admin', 'client') NOT NULL,
-    phone VARCHAR(24) NULL,
-    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    UNIQUE KEY accounts_phone_idx (phone)
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS repairs (
-    id VARCHAR(12) NOT NULL PRIMARY KEY,
-    customer VARCHAR(160) NOT NULL,
-    phone VARCHAR(32) NOT NULL,
-    device VARCHAR(160) NOT NULL,
-    problem TEXT NOT NULL,
-    status VARCHAR(40) NOT NULL,
-    updated VARCHAR(80) NOT NULL,
-    created_at VARCHAR(40) NULL,
-    owner_email VARCHAR(254) NULL,
-    owner_phone VARCHAR(24) NULL,
-    authorized_by VARCHAR(160) NULL,
-    signature MEDIUMTEXT NULL,
-    photos JSON NOT NULL,
-    contact_email VARCHAR(254) NULL,
-    whatsapp_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
-    KEY repairs_owner_email_idx (owner_email),
-    KEY repairs_owner_phone_idx (owner_phone),
-    CONSTRAINT repairs_owner_email_fk FOREIGN KEY (owner_email)
-      REFERENCES accounts(email) ON DELETE SET NULL
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS repair_revisions (
-    repair_id VARCHAR(12) NOT NULL PRIMARY KEY,
-    version BIGINT UNSIGNED NOT NULL DEFAULT 1,
-    CONSTRAINT repair_revisions_repair_fk FOREIGN KEY (repair_id)
-      REFERENCES repairs(id) ON DELETE CASCADE
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS customer_warranties (
-    customer_key VARCHAR(280) NOT NULL PRIMARY KEY,
-    expires_on DATE NULL,
-    updated_by VARCHAR(254) NOT NULL,
-    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
-      ON UPDATE CURRENT_TIMESTAMP(3)
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS app_counters (
-    counter_key VARCHAR(64) NOT NULL PRIMARY KEY,
-    value BIGINT UNSIGNED NOT NULL
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS phone_login_codes (
-    phone VARCHAR(24) NOT NULL PRIMARY KEY,
-    code_hash CHAR(64) NOT NULL,
-    expires_at DATETIME(3) NOT NULL,
-    attempts TINYINT UNSIGNED NOT NULL DEFAULT 0
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS app_settings (
-    \`key\` VARCHAR(100) NOT NULL PRIMARY KEY,
-    value JSON NOT NULL
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-  `CREATE TABLE IF NOT EXISTS inventory (
-    id VARCHAR(100) NOT NULL PRIMARY KEY,
-    value JSON NOT NULL
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
-];
+import { applyMigrations } from "./migrations.js";
 
 function parseJson(value, fallback) {
   if (typeof value !== "string") return value ?? fallback;
@@ -118,16 +56,13 @@ export function createDatabase(connectionString, { production = false, sslCa } =
   });
 
   return {
+    migrate: () => applyMigrations(pool),
+
     async checkHealth() {
       await pool.query("SELECT 1");
     },
 
     async initialize({ adminEmail, adminPassword, hashPassword }) {
-      for (const statement of schema) await pool.query(statement);
-      await pool.execute(
-        `INSERT IGNORE INTO repair_revisions (repair_id, version)
-         SELECT id, 1 FROM repairs`,
-      );
       await pool.execute(
         `INSERT INTO app_counters (counter_key, value)
          SELECT 'repair', GREATEST(1000, COALESCE(MAX(CAST(SUBSTRING(id, 5) AS UNSIGNED)), 1000))
