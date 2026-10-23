@@ -12,15 +12,19 @@ almacenamiento local. Requiere Node.js 20+ y MySQL 8+.
 3. Configura `SESSION_SECRET` con al menos 32 caracteres, `ADMIN_EMAIL` y
    `ADMIN_PASSWORD` (mínimo 12 caracteres). `MAIL_DRY_RUN=true` evita requerir
    SMTP durante el desarrollo.
-4. Ejecuta:
+4. Instala las dependencias y ejecuta primero las migraciones:
 
 ```bash
 npm install
+npm run migrate:dev
 npm run dev
 ```
 
-La API crea las tablas cuando arranca y crea la cuenta administrativa inicial.
-El esquema es nuevo y vacío; no importa datos desde SQLite o PostgreSQL.
+La migración crea el esquema y registra su versión. El servidor normal no ejecuta
+DDL al arrancar; crea la cuenta administrativa inicial cuando corresponde. En
+instalaciones Docker, `docker compose up -d --build` ejecuta el servicio
+`migrate` después de que MySQL esté listo y solo entonces inicia la API.
+No se importan datos desde SQLite o PostgreSQL.
 `GET /health` verifica que el proceso está activo y `GET /ready` comprueba la
 conexión MySQL. Para ejecutar las pruebas:
 
@@ -32,7 +36,29 @@ Para la integración, define `MYSQL_TEST_URL` con una URL de MySQL local que use
 una base terminada en `_test` y ejecuta `npm run test:integration`.
 
 La prueba de integración solo acepta MySQL local y una base cuyo nombre termine
-en `_test`; no la apuntes a datos reales.
+en `_test`; no la apuntes a datos reales. Las pruebas de migraciones crean y
+eliminan bases temporales, así que el usuario necesita permisos `CREATE DATABASE`
+y `DROP DATABASE`.
+
+### Despliegue y actualización de esquema
+
+Ejecuta `npm run migrate` con `MYSQL_URL` y, si se usan, `NODE_ENV` y
+`MYSQL_SSL_CA` configurados antes de actualizar o iniciar la API. El comando
+adquiere un bloqueo de MySQL, verifica checksums y aplica las migraciones SQL
+pendientes en orden. No modifiques migraciones ya aplicadas; agrega una nueva
+migración numerada.
+
+En bases existentes sin historial, el migrador valida las tablas y tipos del
+esquema base conocido y las registra como baseline, sin eliminar ni reescribir
+sus registros. Después aplica las migraciones pendientes de revisiones y
+garantías. Si el esquema no coincide, se detiene para evitar adoptar una base
+parcial o desconocida; inspecciona y respalda la base antes de corregirla.
+
+MySQL puede confirmar DDL de forma implícita, por lo que no existe rollback
+automático universal para una migración que falla a mitad de ejecución. El
+ejecutor se detiene, no registra la migración fallida como completada y las
+migraciones actuales usan operaciones repetibles para permitir reintentar luego
+de corregir el problema.
 
 ## Persistencia de órdenes, garantías e inventario
 

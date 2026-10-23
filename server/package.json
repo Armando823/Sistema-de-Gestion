@@ -11,8 +11,10 @@
   "scripts": {
     "start": "node ./src/index.js",
     "dev": "node --env-file=.env src/index.js",
+    "migrate": "node ./src/migrate.js",
+    "migrate:dev": "node --env-file=.env src/migrate.js",
     "test": "node --test test/server.test.mjs",
-    "test:integration": "node --test test/database.integration.test.mjs"
+    "test:integration": "node --test test/database.integration.test.mjs test/migrations.integration.test.mjs"
   },
   "dependencies": {
     "mysql2": "^3.24.6",

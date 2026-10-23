@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS repair_revisions (
+  repair_id VARCHAR(12) NOT NULL PRIMARY KEY,
+  version BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  CONSTRAINT repair_revisions_repair_fk FOREIGN KEY (repair_id)
+    REFERENCES repairs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

@@ -61,12 +61,13 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
     }
   });
 
+  await database.migrate();
+  initialized = true;
   await database.initialize({
     adminEmail,
     adminPassword: "integration-password",
     hashPassword: async () => "integration-hash",
   });
-  initialized = true;
 
   for (const id of ids) {
     assert.equal(await database.getRepairById(id), null, `el identificador ${id} ya existe en la base de pruebas`);
