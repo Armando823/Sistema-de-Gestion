@@ -128,7 +128,10 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
     /tablas sin historial que no corresponden al esquema conocido/,
   );
   assert.equal(
-    (await queryDatabase(databaseNames[3], "SHOW TABLES")).length,
+    Number((await queryDatabase(
+      databaseNames[3],
+      "SELECT COUNT(*) AS tableCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()",
+    ))[0].tableCount),
     2,
     "el migrador no debe adoptar ni ampliar una base desconocida",
   );

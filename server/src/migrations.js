@@ -229,13 +229,20 @@ async function baselineLegacySchema(connection, migrations) {
     throw new Error("El esquema base existente no es compatible: difiere repairs_owner_email_fk.");
   }
   const knownMigrations = new Map(migrations.map((migration) => [migration.id, migration]));
-  for (const migrationId of baselineMigrationIds) {
-    const migration = knownMigrations.get(migrationId);
-    if (!migration) throw new Error(`Falta la migración base ${migrationId}.`);
-    await connection.execute(
-      "INSERT INTO schema_migrations (migration_id, checksum) VALUES (?, ?)",
-      [migration.id, migration.checksum],
-    );
+  await connection.beginTransaction();
+  try {
+    for (const migrationId of baselineMigrationIds) {
+      const migration = knownMigrations.get(migrationId);
+      if (!migration) throw new Error(`Falta la migración base ${migrationId}.`);
+      await connection.execute(
+        "INSERT INTO schema_migrations (migration_id, checksum) VALUES (?, ?)",
+        [migration.id, migration.checksum],
+      );
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
   }
   return true;
 }

@@ -45,8 +45,8 @@ y `DROP DATABASE`.
 Ejecuta `npm run migrate` con `MYSQL_URL` y, si se usan, `NODE_ENV` y
 `MYSQL_SSL_CA` configurados antes de actualizar o iniciar la API. El comando
 adquiere un bloqueo de MySQL, verifica checksums y aplica las migraciones SQL
-pendientes en orden. No modifiques migraciones ya aplicadas; agrega una nueva
-migración numerada.
+pendientes en orden; cada archivo debe contener una sola sentencia SQL. No
+modifiques migraciones ya aplicadas; agrega una nueva migración numerada.
 
 En bases existentes sin historial, el migrador valida las tablas y tipos del
 esquema base conocido y las registra como baseline, sin eliminar ni reescribir
