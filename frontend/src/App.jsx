@@ -27,71 +27,15 @@ import {
   importSharedRepair,
 } from "./services/dbService";
 import { readImage } from "./utils/image";
+import { createRepairBackup, getBackupRepairs, isValidBackupRepair } from "./utils/repairBackup";
 import { sendReceiptEmail } from "./services/notifyService";
 import {
-  isValidRepair,
-  isValidEmail,
   isValidImageData,
   repairLimits,
   validateRepairForm,
 } from "./utils/repairValidation";
 
 const supportEmail = "soporte@tallerdigital.com";
-const backupFormat = "sistema-de-gestion.repair-backup";
-const backupRepairFields = new Set([
-  "id",
-  "customer",
-  "phone",
-  "device",
-  "problem",
-  "status",
-  "updated",
-  "createdAt",
-  "ownerEmail",
-  "ownerPhone",
-  "authorizedBy",
-  "signature",
-  "photos",
-  "contactEmail",
-  "whatsappOptIn",
-  "version",
-]);
-
-function isValidBackupRepair(repair) {
-  return Boolean(
-    repair &&
-    typeof repair === "object" &&
-    !Array.isArray(repair) &&
-    Object.keys(repair).every((key) => backupRepairFields.has(key)) &&
-    isValidRepair(repair) &&
-    (repair.version === undefined ||
-      (Number.isSafeInteger(repair.version) && repair.version >= 1)) &&
-    (repair.createdAt === undefined || repair.createdAt === null ||
-      (typeof repair.createdAt === "string" && repair.createdAt.length <= 40)) &&
-    (repair.ownerEmail === undefined || isValidEmail(repair.ownerEmail)) &&
-    (repair.ownerPhone === undefined ||
-      (typeof repair.ownerPhone === "string" && /^\+[1-9]\d{7,14}$/.test(repair.ownerPhone)))
-  );
-}
-
-function getBackupRepairs(data) {
-  if (Array.isArray(data)) return data;
-  if (!data || typeof data !== "object" || Array.isArray(data) ||
-      !Array.isArray(data.repairs)) return null;
-  if (data.format === backupFormat && data.version === 1 &&
-      Object.keys(data).every((key) =>
-        ["format", "version", "exportedAt", "repairs"].includes(key),
-      ) &&
-      typeof data.exportedAt === "string" &&
-      Number.isFinite(Date.parse(data.exportedAt))) {
-    return data.repairs;
-  }
-  if (data.format === undefined && data.version === undefined &&
-      Object.keys(data).every((key) => key === "repairs")) {
-    return data.repairs;
-  }
-  return null;
-}
 
 const defaultSettings = {
   businessName: "Taller Digital",
@@ -435,12 +379,7 @@ function App({ version = "Final" }) {
   }
 
   function exportRepairs() {
-    const backup = {
-      format: backupFormat,
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      repairs,
-    };
+    const backup = createRepairBackup(repairs);
     const blob = new Blob([JSON.stringify(backup, null, 2)], {
       type: "application/json;charset=utf-8",
     });
