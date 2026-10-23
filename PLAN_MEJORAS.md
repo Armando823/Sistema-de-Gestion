@@ -41,7 +41,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 
 ### 2. Endurecer contratos y estructura de la API
 
-- Separar `server/src/app.js` por rutas/dominios (autenticación, órdenes, clientes, inventario, ajustes y notificaciones), conservando una única composición de aplicación. En curso: inventario y garantías viven en `server/src/routes/admin.js`; faltan los demás dominios.
+- Separar `server/src/app.js` por rutas/dominios (autenticación, órdenes, clientes, inventario, ajustes y notificaciones), conservando una única composición de aplicación. En curso: órdenes, inventario y garantías viven en `server/src/routes/repairs.js` y `server/src/routes/admin.js`; faltan autenticación, clientes, ajustes y notificaciones.
 - Extraer validadores de entrada compartidos por endpoint y responder con errores consistentes, sin exponer detalles internos del servidor o SQL.
 - Definir explícitamente autorización por rol y propiedad para cada operación, especialmente lectura de fotos/constancias, cambios de estado, importación, inventario y ajustes.
 - Normalizar fechas, zonas horarias, moneda y formatos de teléfono en límites claros de la API y la base.
