@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import RepairForm from "../repairs/RepairForm";
 import { laptopCatalog } from "../../data/repairData";
 import { canClientView } from "../../utils/repairAccess";
@@ -25,6 +25,30 @@ export default function ClientView({
   const [result, setResult] = useState(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lookupError, setLookupError] = useState("");
+  const [photoUrls, setPhotoUrls] = useState([]);
+
+  useEffect(() => {
+    const urls = (result?.photos || [])
+      .filter(isValidImageData)
+      .map((imageData) => {
+        const [metadata, encoded] = imageData.split(",", 2);
+        const mimeType = metadata.slice(5, metadata.indexOf(";"));
+        let binary;
+        try {
+          binary = atob(encoded);
+        } catch {
+          return null;
+        }
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        return {
+          imageData,
+          url: URL.createObjectURL(new Blob([bytes], { type: mimeType })),
+        };
+      })
+      .filter(Boolean);
+    setPhotoUrls(urls);
+    return () => urls.forEach(({ url }) => URL.revokeObjectURL(url));
+  }, [result]);
 
   async function findRepair(event) {
     event.preventDefault();
@@ -178,17 +202,17 @@ export default function ClientView({
                 <strong>{result.problem}</strong>
               </div>
             </div>
-            {result.photos?.some(isValidImageData) && (
+            {photoUrls.length > 0 && (
               <div className="client-photos">
                 <div className="section-label">
                   <strong>Fotos de recepción</strong>
-                  <span>{result.photos.filter(isValidImageData).length} archivo(s)</span>
+                  <span>{photoUrls.length} archivo(s)</span>
                 </div>
                 <div className="photo-preview">
-                  {result.photos.filter(isValidImageData).map((photo, index) => (
+                  {photoUrls.map(({ imageData, url }, index) => (
                     <img
-                      key={photo}
-                      src={photo}
+                      key={imageData}
+                      src={url}
                       alt={`Foto del equipo ${index + 1}`}
                     />
                   ))}
