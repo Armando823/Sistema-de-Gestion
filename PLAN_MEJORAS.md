@@ -64,6 +64,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 ### 4. Modularizar el frontend por flujos
 
 - Convertir `App.jsx` en una composición de sesión, rutas/pantallas y servicios; sacar de él la lógica de persistencia, sincronización, importación y constancias.
+- [x] Extraer el formato versionado y la validación de respaldos de órdenes a `frontend/src/utils/repairBackup.js`; la coordinación de importación/exportación permanece en `App.jsx`.
 - Dividir `AdminView.jsx` en pantallas de dashboard, órdenes, inventario, clientes, reportes y ajustes, con componentes presentacionales y hooks pequeños para cada dominio.
 - Centralizar estados de carga, vacío, error, confirmación y guardado; evitar falsos mensajes de éxito y cambios optimistas sin recuperación ante fallo.
 - [x] Reemplazar la transferencia de la lista completa cada tres segundos por consultas condicionales con ETag y una revisión transaccional de órdenes; evaluar eventos en tiempo real solo si el uso lo justifica.
@@ -115,7 +116,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 6. Pruebas E2E, lint/formato y accesibilidad.
 7. Rendimiento medido, operación, backups y documentación.
 
-**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, la validación/restauración administrativa de respaldos y la sincronización condicional de órdenes. También están completadas la modularización de rutas API, la validación compartida de cursores, las pruebas de integración MySQL en CI, el cierre ordenado del servidor y la separación de liveness/readiness. Siguen pendientes la línea base formal de contratos, revisar el esquema completo, modularizar el frontend, completar controles de seguridad, pruebas de componentes/E2E y documentar/probar la recuperación de MySQL.
+**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, la validación/restauración administrativa de respaldos y la sincronización condicional de órdenes. También están completadas la modularización de rutas API, la validación compartida de cursores, las pruebas de integración MySQL en CI, el cierre ordenado del servidor y la separación de liveness/readiness. En el frontend comenzó la extracción del contrato de respaldos; siguen pendientes el resto de la modularización, revisar el esquema completo, completar controles de seguridad, pruebas de componentes/E2E y documentar/probar la recuperación de MySQL.
 
 Cada etapa debe ser un conjunto pequeño de cambios revisables. No cambiar simultáneamente el modelo de datos, autenticación y toda la UI; desplegar cada paso tras sus pruebas para reducir riesgo y facilitar reversión.
 
