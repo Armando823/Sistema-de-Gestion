@@ -224,7 +224,8 @@ function App({ version = "Final" }) {
       try {
         const latestRepairs = await loadRepairs();
         if (!active || repairsRef.current !== previousRepairs) return;
-        if (JSON.stringify(latestRepairs) !== JSON.stringify(previousRepairs)) {
+        if (latestRepairs !== previousRepairs &&
+            JSON.stringify(latestRepairs) !== JSON.stringify(previousRepairs)) {
           setRepairs(latestRepairs);
         }
         syncFailed = false;

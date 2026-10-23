@@ -55,6 +55,15 @@ export function createDatabase(connectionString, { production = false, sslCa } =
     dateStrings: ["DATE"],
   });
 
+  async function incrementRepairSyncRevision(connection) {
+    const [result] = await connection.execute(
+      "UPDATE app_counters SET value = value + 1 WHERE counter_key = 'repair_sync'",
+    );
+    if (result.affectedRows !== 1) {
+      throw new Error("No se inicializó la revisión de sincronización de órdenes.");
+    }
+  }
+
   return {
     migrate: () => applyMigrations(pool),
 
@@ -182,6 +191,9 @@ export function createDatabase(connectionString, { production = false, sslCa } =
             await connection.execute("UPDATE repairs SET owner_phone = ? WHERE id = ?", [phone, repair.id]);
           }
         }
+        if (repairs.some((repair) => normalizePhone(repair.phone) === phone)) {
+          await incrementRepairSyncRevision(connection);
+        }
         await connection.commit();
         return account;
       } catch (error) {
@@ -212,6 +224,14 @@ export function createDatabase(connectionString, { production = false, sslCa } =
         .map(mapRepair);
     },
 
+    async getRepairSyncRevision() {
+      const [rows] = await pool.execute(
+        "SELECT CAST(value AS CHAR) AS revision FROM app_counters WHERE counter_key = 'repair_sync'",
+      );
+      if (!rows[0]) throw new Error("No se inicializó la revisión de sincronización de órdenes.");
+      return rows[0].revision;
+    },
+
     async createRepair(account, repair) {
       const connection = await pool.getConnection();
       try {
@@ -236,6 +256,7 @@ export function createDatabase(connectionString, { production = false, sslCa } =
           "INSERT INTO repair_revisions (repair_id, version) VALUES (?, 1)",
           [repair.id],
         );
+        await incrementRepairSyncRevision(connection);
         await connection.commit();
         return {
           ...repair,
@@ -304,6 +325,7 @@ export function createDatabase(connectionString, { production = false, sslCa } =
            ON DUPLICATE KEY UPDATE version = VALUES(version)`,
           [id, nextVersion],
         );
+        await incrementRepairSyncRevision(connection);
         const [updatedRows] = await connection.execute(
           `SELECT repairs.*, ? AS version FROM repairs WHERE id = ?`,
           [nextVersion, id],
@@ -348,7 +370,18 @@ export function createDatabase(connectionString, { production = false, sslCa } =
     },
 
     async deleteRepair(id) {
-      await pool.execute("DELETE FROM repairs WHERE id = ?", [id]);
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [result] = await connection.execute("DELETE FROM repairs WHERE id = ?", [id]);
+        if (result.affectedRows > 0) await incrementRepairSyncRevision(connection);
+        await connection.commit();
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
     },
 
     async getRepairById(id) {

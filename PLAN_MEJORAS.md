@@ -66,7 +66,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 - Convertir `App.jsx` en una composición de sesión, rutas/pantallas y servicios; sacar de él la lógica de persistencia, sincronización, importación y constancias.
 - Dividir `AdminView.jsx` en pantallas de dashboard, órdenes, inventario, clientes, reportes y ajustes, con componentes presentacionales y hooks pequeños para cada dominio.
 - Centralizar estados de carga, vacío, error, confirmación y guardado; evitar falsos mensajes de éxito y cambios optimistas sin recuperación ante fallo.
-- Reemplazar el sondeo completo cada tres segundos por un mecanismo eficiente que mantenga la simplicidad operativa: consultas incrementales con versión/ETag inicialmente; evaluar eventos en tiempo real solo si el uso lo justifica.
+- [x] Reemplazar la transferencia de la lista completa cada tres segundos por consultas condicionales con ETag y una revisión transaccional de órdenes; evaluar eventos en tiempo real solo si el uso lo justifica.
 - Separar CSS por componentes o dominios, eliminar reglas duplicadas y tokens sin uso, y conservar responsive, accesibilidad y modo oscuro.
 - Definir una guía visual y una capa pequeña de componentes reutilizables (botones, campos, paneles, diálogos, etiquetas de estado), sin añadir una librería pesada si no aporta valor.
 
@@ -114,7 +114,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 6. Pruebas E2E, lint/formato y accesibilidad.
 7. Rendimiento medido, operación, backups y documentación.
 
-**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, y la validación/restauración administrativa de respaldos. Continúan pendientes la reducción del sondeo completo y las etapas posteriores de modularización, seguridad, cobertura y operación.
+**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, la validación/restauración administrativa de respaldos y la sincronización condicional de órdenes. Continúan pendientes las etapas posteriores de modularización, seguridad, cobertura y operación.
 
 Cada etapa debe ser un conjunto pequeño de cambios revisables. No cambiar simultáneamente el modelo de datos, autenticación y toda la UI; desplegar cada paso tras sus pruebas para reducir riesgo y facilitar reversión.
 
