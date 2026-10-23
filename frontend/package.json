@@ -5,12 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:admin": "vite --mode admin",
-    "dev:client": "vite --mode client",
-    "build": "vite build --mode client",
-    "build:web": "vite build --mode web",
-    "build:admin": "vite build --mode admin",
-    "build:client": "vite build --mode client",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {

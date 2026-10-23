@@ -29,8 +29,8 @@ export function loadConfig(env = process.env) {
     host: env.HOST || "0.0.0.0",
     port: toPort(env.PORT, 3001),
     apiKey: env.NOTIFY_API_KEY || "",
-    databaseUrl: env.DATABASE_URL || "",
-    databaseSslCa: String(env.DATABASE_SSL_CA || "").replace(/\\n/g, "\n"),
+    mysqlUrl: env.MYSQL_URL || "",
+    mysqlSslCa: String(env.MYSQL_SSL_CA || "").replace(/\\n/g, "\n"),
     sessionSecret: env.SESSION_SECRET || "",
     adminEmail: env.ADMIN_EMAIL || "",
     adminPassword: env.ADMIN_PASSWORD || "",
@@ -73,9 +73,6 @@ export function loadConfig(env = process.env) {
   };
 
   const problems = [];
-  if (production && config.apiKey.length < 16) {
-    problems.push("NOTIFY_API_KEY es obligatoria en producción (mínimo 16 caracteres).");
-  }
   if (!dryRun) {
     if (!config.mail.from) problems.push("MAIL_FROM es obligatorio.");
     if (!config.mail.host) problems.push("SMTP_HOST es obligatorio.");
@@ -83,8 +80,8 @@ export function loadConfig(env = process.env) {
   if (Boolean(config.whatsapp.accessToken) !== Boolean(config.whatsapp.phoneNumberId)) {
     problems.push("WHATSAPP_ACCESS_TOKEN y WHATSAPP_PHONE_NUMBER_ID deben configurarse juntos.");
   }
-  if (config.databaseSslCa && !/-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/.test(config.databaseSslCa)) {
-    problems.push("DATABASE_SSL_CA debe contener un certificado PEM válido.");
+  if (config.mysqlSslCa && !/-----BEGIN CERTIFICATE-----[\s\S]+-----END CERTIFICATE-----/.test(config.mysqlSslCa)) {
+    problems.push("MYSQL_SSL_CA debe contener un certificado PEM válido.");
   }
   if (problems.length > 0) {
     throw new Error(`Configuración inválida:\n- ${problems.join("\n- ")}`);

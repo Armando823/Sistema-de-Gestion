@@ -5,7 +5,7 @@ import { createApp } from "../src/app.js";
 import { sendWithRetry } from "../src/mailer.js";
 import { parseReceiptRequest, buildReceiptEmail } from "../src/receiptEmail.js";
 import { createRateLimiter } from "../src/rateLimiter.js";
-import { createPostgresPoolOptions, createPostgresSslConfig } from "../src/postgresTls.js";
+import { createMysqlSslConfig } from "../src/mysqlTls.js";
 import { createSessionToken, hashPassword } from "../src/auth.js";
 import { createWhatsApp } from "../src/whatsapp.js";
 
@@ -53,8 +53,8 @@ function post(url, body, headers = {}) {
   });
 }
 
-test("config: en producción exige API key y SMTP", () => {
-  assert.throws(() => loadConfig({ NODE_ENV: "production", MAIL_DRY_RUN: "true" }), /NOTIFY_API_KEY/);
+test("config: producción no requiere una clave local de notificaciones y valida SMTP", () => {
+  assert.doesNotThrow(() => loadConfig({ NODE_ENV: "production", MAIL_DRY_RUN: "true" }));
   assert.throws(() => loadConfig({ NOTIFY_API_KEY: "x" }), /MAIL_FROM/);
   assert.doesNotThrow(() => loadConfig({ MAIL_FROM: "a@b.co", SMTP_HOST: "smtp.b.co" }));
 });
@@ -66,26 +66,16 @@ test("config: usa el puerto del entorno y valida su rango", () => {
   assert.throws(() => loadConfig({ PORT: "65536", MAIL_DRY_RUN: "true" }), /PORT debe ser/);
 });
 
-test("TLS PostgreSQL valida certificados en producción y admite CA PEM configurada", () => {
+test("MySQL TLS validates certificates in production and accepts a configured CA", () => {
   const ca = "-----BEGIN CERTIFICATE-----\ncertificado\n-----END CERTIFICATE-----";
-  assert.equal(createPostgresSslConfig({ production: false }), undefined);
-  assert.deepEqual(createPostgresSslConfig({ production: true }), { rejectUnauthorized: true });
-  assert.deepEqual(createPostgresSslConfig({ production: true, ca }), {
+  assert.equal(createMysqlSslConfig({ production: false }), undefined);
+  assert.deepEqual(createMysqlSslConfig({ production: true }), { rejectUnauthorized: true });
+  assert.deepEqual(createMysqlSslConfig({ production: true, ca }), {
     rejectUnauthorized: true,
     ca,
   });
-  const poolOptions = createPostgresPoolOptions(
-    "postgres://user:pass@db.example/app?sslmode=no-verify&application_name=taller",
-    { production: true, ca },
-  );
-  assert.equal(poolOptions.connectionString, "postgres://user:pass@db.example/app?application_name=taller");
-  assert.deepEqual(poolOptions.ssl, { rejectUnauthorized: true, ca });
-  assert.equal(
-    createPostgresPoolOptions("postgres://localhost/app?sslmode=disable", { production: false }).connectionString,
-    "postgres://localhost/app?sslmode=disable",
-  );
-  assert.equal(loadConfig({ DATABASE_SSL_CA: ca.replaceAll("\n", "\\n"), MAIL_DRY_RUN: "true" }).databaseSslCa, ca);
-  assert.throws(() => loadConfig({ DATABASE_SSL_CA: "certificado inválido", MAIL_DRY_RUN: "true" }), /DATABASE_SSL_CA/);
+  assert.equal(loadConfig({ MYSQL_SSL_CA: ca.replaceAll("\n", "\\n"), MAIL_DRY_RUN: "true" }).mysqlSslCa, ca);
+  assert.throws(() => loadConfig({ MYSQL_SSL_CA: "invalid certificate", MAIL_DRY_RUN: "true" }), /MYSQL_SSL_CA/);
 });
 
 test("config y cliente Meta: requiere los secretos juntos y envía plantillas con el código en el cuerpo", async () => {
@@ -142,7 +132,7 @@ test("API web: registro público crea clientes, el login emite sesión y protege
   });
   const database = {
     async createAccount(email, passwordHash) {
-      if (accounts.has(email)) throw Object.assign(new Error("duplicate"), { code: "23505" });
+      if (accounts.has(email)) throw Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" });
       accounts.set(email, { email, passwordHash, role: "client" });
     },
     async getAccount(email) { return accounts.get(email) || null; },
@@ -500,7 +490,7 @@ test("responde 413 a cuerpos fragmentados que superan el límite", async () => {
   }
 });
 
-test("readiness comprueba PostgreSQL y conserva health como liveness", async () => {
+test("readiness comprueba MySQL y conserva health como liveness", async () => {
   const missingDatabase = await start();
   try {
     assert.equal((await fetch(`${missingDatabase.url}/health`)).status, 200);
