@@ -16,6 +16,8 @@ almacenamiento local como fuente de datos.
 - Gestionar inventario y configuración del taller.
 - Consultar el historial administrativo de cambios de estado y movimientos de
   inventario.
+- Descargar y restaurar respaldos administrativos de órdenes, sin sobrescribir
+  registros existentes.
 - Enviar constancias por correo y códigos por WhatsApp cuando el servidor tenga
   configuradas esas integraciones y el cliente haya dado su autorización.
 

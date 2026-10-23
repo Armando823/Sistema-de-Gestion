@@ -20,7 +20,11 @@ async function request(path, options = {}, authenticated = true) {
     },
   });
   const data = response.status === 204 ? {} : await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Error ${response.status} del servidor.`);
+  if (!response.ok) {
+    const error = new Error(data.error || `Error ${response.status} del servidor.`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -109,6 +113,13 @@ export async function deleteSharedRepair(id) {
 
 export async function createSharedRepair(repair) {
   return (await request("/api/repairs", {
+    method: "POST",
+    body: JSON.stringify({ repair }),
+  })).repair;
+}
+
+export async function importSharedRepair(repair) {
+  return (await request("/api/repairs/import", {
     method: "POST",
     body: JSON.stringify({ repair }),
   })).repair;

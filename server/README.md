@@ -68,6 +68,22 @@ envían mediante `PATCH /api/repairs/:id` con la versión leída por el cliente.
 otra sesión guardó primero, la API responde `409` para evitar sobrescribir su
 cambio. La lista de órdenes no admite reemplazo global.
 
+`POST /api/repairs/import` restaura una orden por solicitud y requiere una
+sesión administrativa. El servidor valida los campos permitidos y el contenido;
+responde `409` cuando el código ya existe, sin reemplazar la orden. El respaldo
+JSON versionado exportado por la interfaz se puede restaurar, y también se
+aceptan los formatos antiguos de lista o `{ "repairs": [...] }`. La interfaz
+valida cada registro y muestra por separado cuántos fueron agregados,
+duplicados, inválidos o fallidos.
+
+El respaldo de órdenes es completo para permitir recuperación: incluye datos
+personales de contacto, asignación de cuenta, fotos y firmas. Descárgalo y
+transfiérelo solo por canales protegidos, limita su acceso y bórralo cuando ya
+no sea necesario. La restauración no altera órdenes existentes; un archivo con
+datos personales o medios puede superar el límite de tamaño y requerir dividirse
+en respaldos más pequeños. El archivo y cada solicitud de restauración están
+limitados a 12 MiB.
+
 Las garantías se consultan y guardan en `/api/customers/warranties`; las rutas
 requieren una sesión administrativa. El inventario también requiere ese rol y se
 modifica por elemento:

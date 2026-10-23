@@ -35,7 +35,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 - [x] Registrar historial de cambios de estado con actor y fecha.
 - [x] Sustituir reemplazos globales de inventario por altas, ediciones, eliminaciones y movimientos transaccionales; serializar el stock y rechazar cantidades negativas.
 - [x] Registrar un historial de movimientos de inventario para auditoría.
-- Revisar importación/exportación para definir qué campos puede importar el administrador, cómo se validan, cómo se informa de duplicados y qué datos privados se excluyen.
+- [x] Revisar importación/exportación: validar campos permitidos en servidor, restringir restauración a administración, reportar duplicados y advertir que los respaldos completos contienen datos personales y medios.
 
 **Salida verificable:** dos sesiones concurrentes no se pisan; clientes y garantías reflejan datos persistidos; los movimientos de inventario sobreviven recargas y no producen stock negativo; hay pruebas de permisos y rollback.
 
@@ -114,7 +114,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 6. Pruebas E2E, lint/formato y accesibilidad.
 7. Rendimiento medido, operación, backups y documentación.
 
-**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas y el historial transaccional de estados y movimientos de inventario. Continúan pendientes la revisión de importación/exportación y la reducción del sondeo completo.
+**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas, el historial transaccional de estados y movimientos de inventario, y la validación/restauración administrativa de respaldos. Continúan pendientes la reducción del sondeo completo y las etapas posteriores de modularización, seguridad, cobertura y operación.
 
 Cada etapa debe ser un conjunto pequeño de cambios revisables. No cambiar simultáneamente el modelo de datos, autenticación y toda la UI; desplegar cada paso tras sus pruebas para reducir riesgo y facilitar reversión.
 

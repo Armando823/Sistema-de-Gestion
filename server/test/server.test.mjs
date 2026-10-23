@@ -220,9 +220,14 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
   const inventory = new Map();
   const repairHistory = [];
   const inventoryHistory = [];
+  const repairIds = new Set();
   let repairVersion = 1;
   const database = {
     async createRepair(account, newRepair) {
+      if (repairIds.has(newRepair.id)) {
+        throw Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" });
+      }
+      repairIds.add(newRepair.id);
       return { ...newRepair, status: account.role === "admin" ? newRepair.status : "Recibido", version: 1 };
     },
     async updateRepair(id, expectedVersion, patch, actorEmail) {
@@ -301,6 +306,50 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
     });
     assert.equal(created.status, 201);
     assert.equal((await created.json()).repair.version, 1);
+
+    const backupRepair = {
+      ...repair,
+      id: "REP-1002",
+      createdAt: "2026-10-22T20:00:00.000Z",
+      ownerEmail: client.email,
+      ownerPhone: "+573001234567",
+      contactEmail: client.email,
+      whatsappOptIn: true,
+      photos: [PNG],
+      version: 4,
+    };
+    const clientImport = await fetch(`${app.url}/api/repairs/import`, {
+      method: "POST",
+      headers: headers(clientToken),
+      body: JSON.stringify({ repair: backupRepair }),
+    });
+    assert.equal(clientImport.status, 403);
+
+    const invalidBackupImport = await fetch(`${app.url}/api/repairs/import`, {
+      method: "POST",
+      headers: headers(adminToken),
+      body: JSON.stringify({ repair: { ...backupRepair, unexpectedField: "ignored?" } }),
+    });
+    assert.equal(invalidBackupImport.status, 422);
+
+    const importedBackup = await fetch(`${app.url}/api/repairs/import`, {
+      method: "POST",
+      headers: headers(adminToken),
+      body: JSON.stringify({ repair: backupRepair }),
+    });
+    assert.equal(importedBackup.status, 201);
+    const restoredRepair = (await importedBackup.json()).repair;
+    assert.equal(restoredRepair.id, backupRepair.id);
+    assert.equal(restoredRepair.ownerEmail, client.email);
+    assert.equal(restoredRepair.signature, PNG);
+    assert.equal(restoredRepair.version, 1);
+
+    const duplicateBackupImport = await fetch(`${app.url}/api/repairs/import`, {
+      method: "POST",
+      headers: headers(adminToken),
+      body: JSON.stringify({ repair: backupRepair }),
+    });
+    assert.equal(duplicateBackupImport.status, 409);
 
     const forbiddenUpdate = await fetch(`${app.url}/api/repairs/REP-1001`, {
       method: "PATCH",
