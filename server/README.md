@@ -50,9 +50,10 @@ modifiques migraciones ya aplicadas; agrega una nueva migración numerada.
 
 En bases existentes sin historial, el migrador valida las tablas y tipos del
 esquema base conocido y las registra como baseline, sin eliminar ni reescribir
-sus registros. Después aplica las migraciones pendientes de revisiones y
-garantías. Si el esquema no coincide, se detiene para evitar adoptar una base
-parcial o desconocida; inspecciona y respalda la base antes de corregirla.
+sus registros. Después aplica las migraciones pendientes de revisiones,
+garantías e historiales de auditoría. Si el esquema no coincide, se detiene
+para evitar adoptar una base parcial o desconocida; inspecciona y respalda la
+base antes de corregirla.
 
 MySQL puede confirmar DDL de forma implícita, por lo que no existe rollback
 automático universal para una migración que falla a mitad de ejecución. El
@@ -78,6 +79,16 @@ modifica por elemento:
 
 Los movimientos se serializan en MySQL y responden `409` si dejarían existencias
 negativas. No se admite reemplazar la colección completa.
+
+Cada cambio real de estado de una orden registra el estado anterior y nuevo, el
+administrador y la fecha en la misma transacción que actualiza la orden. El
+historial se consulta en `GET /api/repairs/:id/status-history?limit=50&beforeId=<id>`,
+solo para administradores, con páginas de hasta 100 eventos. El inventario
+registra altas, ediciones, entradas/salidas y bajas en la misma transacción que
+modifica el repuesto; su consulta
+`GET /api/inventory/movements?limit=50&beforeId=<id>` requiere administración,
+limita cada página a 100 movimientos y conserva los eventos aunque se borre la
+orden o el repuesto asociado.
 
 ## Configuración
 

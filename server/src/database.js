@@ -252,7 +252,7 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       }
     },
 
-    async updateRepair(id, expectedVersion, patch) {
+    async updateRepair(id, expectedVersion, patch, actorEmail) {
       const connection = await pool.getConnection();
       try {
         await connection.beginTransaction();
@@ -290,6 +290,14 @@ export function createDatabase(connectionString, { production = false, sslCa } =
           `UPDATE repairs SET ${assignments.join(", ")} WHERE id = ?`,
           values,
         );
+        if (patch.status !== undefined && patch.status !== row.status) {
+          await connection.execute(
+            `INSERT INTO repair_status_history
+              (repair_id, previous_status, new_status, actor_email)
+             VALUES (?, ?, ?, ?)`,
+            [id, row.status, patch.status, actorEmail],
+          );
+        }
         const nextVersion = currentVersion + 1;
         await connection.execute(
           `INSERT INTO repair_revisions (repair_id, version) VALUES (?, ?)
@@ -369,6 +377,21 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       return { ...mapRepair(row), ownerEmail: undefined, ownerPhone: undefined };
     },
 
+    async listRepairStatusHistory(
+      id,
+      { beforeId = "18446744073709551615", limit = 50 } = {},
+    ) {
+      const [rows] = await pool.execute(
+        `SELECT id, repair_id AS repairId, previous_status AS previousStatus,
+                new_status AS newStatus, actor_email AS actorEmail, occurred_at AS occurredAt
+         FROM repair_status_history
+         WHERE repair_id = ? AND id < ?
+         ORDER BY id DESC LIMIT ?`,
+        [id, beforeId, limit],
+      );
+      return rows.map((row) => ({ ...row, id: String(row.id) }));
+    },
+
     async listCustomerWarranties() {
       const [rows] = await pool.execute(
         "SELECT customer_key, expires_on FROM customer_warranties ORDER BY customer_key",
@@ -414,15 +437,31 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       return rows.map((row) => parseJson(row.value, null));
     },
 
-    async createInventoryItem(item) {
-      await pool.execute(
-        "INSERT INTO inventory (id, value) VALUES (?, ?)",
-        [String(item.id), JSON.stringify(item)],
-      );
-      return item;
+    async createInventoryItem(item, actorEmail) {
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        await connection.execute(
+          "INSERT INTO inventory (id, value) VALUES (?, ?)",
+          [String(item.id), JSON.stringify(item)],
+        );
+        await connection.execute(
+          `INSERT INTO inventory_movements
+            (item_id, item_name, action, quantity_delta, stock_after, actor_email)
+           VALUES (?, ?, 'created', ?, ?, ?)`,
+          [String(item.id), item.item, item.stock, item.stock, actorEmail],
+        );
+        await connection.commit();
+        return item;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
     },
 
-    async updateInventoryItem(id, item, stockDelta) {
+    async updateInventoryItem(id, item, stockDelta, actorEmail) {
       const connection = await pool.getConnection();
       try {
         await connection.beginTransaction();
@@ -445,6 +484,19 @@ export function createDatabase(connectionString, { production = false, sslCa } =
           "UPDATE inventory SET value = ? WHERE id = ?",
           [JSON.stringify(updated), id],
         );
+        await connection.execute(
+          `INSERT INTO inventory_movements
+            (item_id, item_name, action, quantity_delta, stock_after, actor_email)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            updated.item,
+            stockDelta === 0 ? "updated" : "stock_adjusted",
+            stockDelta,
+            updated.stock,
+            actorEmail,
+          ],
+        );
         await connection.commit();
         return updated;
       } catch (error) {
@@ -455,7 +507,7 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       }
     },
 
-    async adjustInventoryStock(id, delta) {
+    async adjustInventoryStock(id, delta, actorEmail) {
       const connection = await pool.getConnection();
       try {
         await connection.beginTransaction();
@@ -478,6 +530,12 @@ export function createDatabase(connectionString, { production = false, sslCa } =
           "UPDATE inventory SET value = ? WHERE id = ?",
           [JSON.stringify(updated), id],
         );
+        await connection.execute(
+          `INSERT INTO inventory_movements
+            (item_id, item_name, action, quantity_delta, stock_after, actor_email)
+           VALUES (?, ?, 'stock_adjusted', ?, ?, ?)`,
+          [id, updated.item, delta, updated.stock, actorEmail],
+        );
         await connection.commit();
         return updated;
       } catch (error) {
@@ -488,9 +546,52 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       }
     },
 
-    async deleteInventoryItem(id) {
-      const [result] = await pool.execute("DELETE FROM inventory WHERE id = ?", [id]);
-      return result.affectedRows > 0;
+    async deleteInventoryItem(id, actorEmail) {
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const [rows] = await connection.execute(
+          "SELECT value FROM inventory WHERE id = ? FOR UPDATE",
+          [id],
+        );
+        if (!rows[0]) {
+          await connection.rollback();
+          return false;
+        }
+        const item = parseJson(rows[0].value, null);
+        await connection.execute("DELETE FROM inventory WHERE id = ?", [id]);
+        await connection.execute(
+          `INSERT INTO inventory_movements
+            (item_id, item_name, action, quantity_delta, stock_after, actor_email)
+           VALUES (?, ?, 'deleted', ?, NULL, ?)`,
+          [id, item.item, -item.stock, actorEmail],
+        );
+        await connection.commit();
+        return true;
+      } catch (error) {
+        await connection.rollback();
+        throw error;
+      } finally {
+        connection.release();
+      }
+    },
+
+    async listInventoryMovements({ beforeId = "18446744073709551615", limit = 50 } = {}) {
+      const [rows] = await pool.execute(
+        `SELECT id, item_id AS itemId, item_name AS itemName, action,
+                quantity_delta AS quantityDelta, stock_after AS stockAfter,
+                actor_email AS actorEmail, occurred_at AS occurredAt
+         FROM inventory_movements
+         WHERE id < ?
+         ORDER BY id DESC LIMIT ?`,
+        [beforeId, limit],
+      );
+      return rows.map((row) => ({
+        ...row,
+        id: String(row.id),
+        quantityDelta: Number(row.quantityDelta),
+        stockAfter: row.stockAfter === null ? null : Number(row.stockAfter),
+      }));
     },
 
     close: () => pool.end(),

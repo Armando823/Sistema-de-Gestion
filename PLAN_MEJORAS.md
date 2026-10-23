@@ -32,9 +32,9 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 - [x] Derivar clientes de órdenes existentes y persistir garantías en MySQL mediante endpoints restringidos a administración.
 - [x] Sustituir cambios locales de garantía por operaciones servidoras y notificar fallos sin presentar un éxito falso.
 - [x] Cambiar la escritura de órdenes a operaciones explícitas de creación/actualización; versionar cambios de estado y fotos para rechazar actualizaciones obsoletas.
-- [ ] Registrar historial de cambios de estado con actor y fecha.
+- [x] Registrar historial de cambios de estado con actor y fecha.
 - [x] Sustituir reemplazos globales de inventario por altas, ediciones, eliminaciones y movimientos transaccionales; serializar el stock y rechazar cantidades negativas.
-- [ ] Registrar un historial de movimientos de inventario para auditoría.
+- [x] Registrar un historial de movimientos de inventario para auditoría.
 - Revisar importación/exportación para definir qué campos puede importar el administrador, cómo se validan, cómo se informa de duplicados y qué datos privados se excluyen.
 
 **Salida verificable:** dos sesiones concurrentes no se pisan; clientes y garantías reflejan datos persistidos; los movimientos de inventario sobreviven recargas y no producen stock negativo; hay pruebas de permisos y rollback.
@@ -114,7 +114,7 @@ Mejorar la corrección funcional, seguridad, mantenibilidad y operación del sis
 6. Pruebas E2E, lint/formato y accesibilidad.
 7. Rendimiento medido, operación, backups y documentación.
 
-**Avance (primera entrega):** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes y las operaciones atómicas de inventario. Continúan pendientes el historial/auditoría de órdenes e inventario, la revisión de importación/exportación y la reducción del sondeo completo. El esquema de revisiones y garantías aún se crea al iniciar mediante `CREATE TABLE IF NOT EXISTS`; la migración versionada explícita sigue pendiente en la etapa 3.
+**Avance:** se completaron la persistencia de garantías, las mutaciones versionadas de órdenes, las operaciones atómicas de inventario, las migraciones explícitas y el historial transaccional de estados y movimientos de inventario. Continúan pendientes la revisión de importación/exportación y la reducción del sondeo completo.
 
 Cada etapa debe ser un conjunto pequeño de cambios revisables. No cambiar simultáneamente el modelo de datos, autenticación y toda la UI; desplegar cada paso tras sus pruebas para reducir riesgo y facilitar reversión.
 
