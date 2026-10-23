@@ -125,6 +125,7 @@ test("API web: registro público crea clientes, el login emite sesión y protege
   const accounts = new Map();
   const savedRepairs = [];
   let nextRepairNumber = 1000;
+  let syncRevision = 0;
   accounts.set("admin@taller.com", {
     email: "admin@taller.com",
     passwordHash: await hashPassword("ContraseñaAdmin123"),
@@ -137,7 +138,9 @@ test("API web: registro público crea clientes, el login emite sesión y protege
     },
     async getAccount(email) { return accounts.get(email) || null; },
     async listRepairs() { return []; },
+    async getRepairSyncRevision() { return String(syncRevision); },
     async createRepair(account, newRepair) {
+      syncRevision += 1;
       const created = { ...newRepair, status: "Recibido", version: 1 };
       savedRepairs.push({ account, repair: created });
       return created;
@@ -184,6 +187,19 @@ test("API web: registro público crea clientes, el login emite sesión y protege
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(repairs.status, 200);
+    const repairsEtag = repairs.headers.get("ETag");
+    assert.equal(repairsEtag, '"repairs-1"');
+    assert.equal(repairs.headers.get("Cache-Control"), "private, no-cache");
+    assert.match(repairs.headers.get("Vary"), /Authorization/);
+    const unchangedRepairs = await fetch(`${app.url}/api/repairs`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "If-None-Match": repairsEtag,
+      },
+    });
+    assert.equal(unchangedRepairs.status, 304);
+    assert.equal(await unchangedRepairs.text(), "");
+    assert.equal(unchangedRepairs.headers.get("ETag"), repairsEtag);
     assert.equal((await fetch(`${app.url}/api/repairs/next-id`, { method: "POST" })).status, 401);
     const reservedIds = await Promise.all([1, 2].map(async () => {
       const response = await fetch(`${app.url}/api/repairs/next-id`, {
@@ -221,6 +237,7 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
   const repairHistory = [];
   const inventoryHistory = [];
   const repairIds = new Set();
+  let repairSyncRevision = 0;
   let repairVersion = 1;
   const database = {
     async createRepair(account, newRepair) {
@@ -228,10 +245,14 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
         throw Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" });
       }
       repairIds.add(newRepair.id);
+      repairSyncRevision += 1;
       return { ...newRepair, status: account.role === "admin" ? newRepair.status : "Recibido", version: 1 };
     },
+    async listRepairs() { return [repair]; },
+    async getRepairSyncRevision() { return String(repairSyncRevision); },
     async updateRepair(id, expectedVersion, patch, actorEmail) {
       if (expectedVersion !== repairVersion) return { conflict: true, version: repairVersion };
+      repairSyncRevision += 1;
       if (patch.status !== undefined && patch.status !== repair.status) {
         repairHistory.push({
           repairId: id,
@@ -343,6 +364,11 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
     assert.equal(restoredRepair.ownerEmail, client.email);
     assert.equal(restoredRepair.signature, PNG);
     assert.equal(restoredRepair.version, 1);
+    const initialRepairList = await fetch(`${app.url}/api/repairs`, {
+      headers: headers(adminToken),
+    });
+    assert.equal(initialRepairList.status, 200);
+    const initialRepairEtag = initialRepairList.headers.get("ETag");
 
     const duplicateBackupImport = await fetch(`${app.url}/api/repairs/import`, {
       method: "POST",
@@ -365,6 +391,14 @@ test("órdenes usan mutaciones versionadas y garantías solo son editables por a
     });
     assert.equal(changed.status, 200);
     assert.equal((await changed.json()).repair.version, 2);
+    const changedRepairList = await fetch(`${app.url}/api/repairs`, {
+      headers: {
+        ...headers(adminToken),
+        "If-None-Match": initialRepairEtag,
+      },
+    });
+    assert.equal(changedRepairList.status, 200);
+    assert.notEqual(changedRepairList.headers.get("ETag"), initialRepairEtag);
     assert.deepEqual(repairHistory, [{
       repairId: "REP-1001",
       previousStatus: "Recibido",
@@ -863,13 +897,16 @@ test("CORS solo para orígenes permitidos (preflight y respuesta real)", async (
       headers: {
         Origin: "https://taller.example",
         "Access-Control-Request-Method": "PATCH",
+        "Access-Control-Request-Headers": "If-None-Match",
       },
     });
     assert.equal(preflight.status, 204);
     assert.equal(preflight.headers.get("access-control-allow-origin"), "https://taller.example");
     assert.match(preflight.headers.get("access-control-allow-methods"), /\bPATCH\b/);
+    assert.match(preflight.headers.get("access-control-allow-headers"), /\bIf-None-Match\b/i);
     const real = await post(app.url, goodBody, { Origin: "https://taller.example" });
     assert.equal(real.headers.get("access-control-allow-origin"), "https://taller.example");
+    assert.equal(real.headers.get("access-control-expose-headers"), "ETag");
     const denied = await fetch(route, { method: "OPTIONS", headers: { Origin: "https://malo.example" } });
     assert.equal(denied.headers.get("access-control-allow-origin"), null);
   } finally {

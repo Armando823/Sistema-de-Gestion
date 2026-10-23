@@ -77,6 +77,7 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   for (const id of ids) {
     assert.equal(await database.getRepairById(id), null, `el identificador ${id} ya existe en la base de pruebas`);
   }
+  assert.equal(await database.getRepairSyncRevision(), "0");
 
   const seededRepairs = [
     { id: ids[0], customer: "Exact", phone, device: "Equipo", problem: "Falla", status: "Recibido", updated: "hoy" },
@@ -89,6 +90,7 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
     await database.createRepair({ email: adminEmail, role: "admin" }, repair);
   }
   seeded = true;
+  assert.equal(await database.getRepairSyncRevision(), "5");
   const adminAccount = { email: adminEmail, role: "admin" };
   const exactRepair = (await database.listRepairs(adminAccount)).find(({ id }) => id === ids[0]);
   assert.equal(exactRepair.version, 1);
@@ -105,11 +107,13 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   const revisedRepair = concurrentUpdates.find((repair) => !repair.conflict);
   assert.equal(concurrentUpdates.filter((repair) => repair.conflict).length, 1);
   assert.equal(revisedRepair.version, 2);
+  assert.equal(await database.getRepairSyncRevision(), "6");
   const staleUpdate = await database.updateRepair(ids[0], exactRepair.version, {
     status: "Entregado",
     updated: "obsoleto",
   }, adminEmail);
   assert.deepEqual(staleUpdate, { conflict: true, version: 2 });
+  assert.equal(await database.getRepairSyncRevision(), "6");
   const statusHistory = await database.listRepairStatusHistory(ids[0]);
   assert.equal(statusHistory.length, 1);
   assert.equal(statusHistory[0].previousStatus, "Recibido");
@@ -187,4 +191,8 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   });
   const owned = await database.listRepairs(account);
   assert.equal(owned.find(({ id }) => id === ids[4])?.status, "Recibido");
+  assert.equal(await database.getRepairSyncRevision(), "8");
+  await database.deleteRepair(ids[4]);
+  assert.equal(await database.getRepairById(ids[4]), null);
+  assert.equal(await database.getRepairSyncRevision(), "9");
 });

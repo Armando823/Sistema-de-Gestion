@@ -66,7 +66,12 @@ de corregir el problema.
 Las órdenes se crean con `POST /api/repairs` y sus cambios administrativos se
 envían mediante `PATCH /api/repairs/:id` con la versión leída por el cliente. Si
 otra sesión guardó primero, la API responde `409` para evitar sobrescribir su
-cambio. La lista de órdenes no admite reemplazo global.
+cambio. `GET /api/repairs` devuelve un `ETag` asociado a una revisión MySQL
+monótona. Las consultas siguientes pueden enviar `If-None-Match` para recibir
+`304 Not Modified` cuando no hubo cambios; así el sondeo conserva su
+actualización frecuente sin retransmitir fotos ni toda la lista. La revisión se
+incrementa en la misma transacción al crear, actualizar, borrar o asociar una
+orden a una cuenta. La lista de órdenes no admite reemplazo global.
 
 `POST /api/repairs/import` restaura una orden por solicitud y requiere una
 sesión administrativa. El servidor valida los campos permitidos y el contenido;

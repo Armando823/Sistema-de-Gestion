@@ -22,6 +22,7 @@ const allMigrations = [
   "009_backfill_repair_revisions.sql",
   "010_audit_history.sql",
   "011_inventory_movements.sql",
+  "012_repair_sync_revision.sql",
 ];
 
 test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder datos", {
@@ -144,8 +145,15 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
     freshDatabase.migrate(),
     secondFreshDatabase.migrate(),
   ]);
-  assert.deepEqual(parallelResults.map(({ applied }) => applied).sort(), [0, 11]);
+  assert.deepEqual(parallelResults.map(({ applied }) => applied).sort(), [0, 12]);
   assert.equal((await freshDatabase.migrate()).applied, 0);
+  assert.deepEqual(
+    await queryDatabase(
+      databaseNames[0],
+      "SELECT CAST(value AS CHAR) AS revision FROM app_counters WHERE counter_key = 'repair_sync'",
+    ),
+    [{ revision: "0" }],
+  );
   const checksumSql = (await readFile(
     new URL("001_accounts.sql", migrationDirectory),
     "utf8",
@@ -234,7 +242,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   } finally {
     await repairRecovery.end();
   }
-  assert.equal((await legacyDatabase.migrate()).applied, 5);
+  assert.equal((await legacyDatabase.migrate()).applied, 6);
   assert.deepEqual(
     await queryDatabase(
       databaseNames[1],
@@ -267,7 +275,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   }
 
   const currentDatabase = createTestDatabase(databaseNames[2]);
-  assert.equal((await currentDatabase.migrate()).applied, 5);
+  assert.equal((await currentDatabase.migrate()).applied, 6);
   assert.deepEqual(
     await queryDatabase(
       databaseNames[2],

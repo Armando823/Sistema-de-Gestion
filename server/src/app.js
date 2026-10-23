@@ -227,8 +227,9 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     if (origin && config.allowedOrigins.includes(origin)) {
       return {
         "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, Authorization",
+        "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, Authorization, If-None-Match",
         "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+        "Access-Control-Expose-Headers": "ETag",
         Vary: "Origin",
       };
     }
@@ -362,7 +363,20 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       return;
     }
     if (req.method === "GET" && pathname === "/api/repairs") {
-      send(res, 200, { repairs: await database.listRepairs(session) }, cors);
+      const revision = await database.getRepairSyncRevision();
+      const etag = `"repairs-${revision}"`;
+      const responseHeaders = {
+        ...cors,
+        ETag: etag,
+        "Cache-Control": "private, no-cache",
+        Vary: cors.Vary ? `${cors.Vary}, Authorization` : "Authorization",
+      };
+      if (req.headers["if-none-match"] === etag) {
+        res.writeHead(304, responseHeaders);
+        res.end();
+        return;
+      }
+      send(res, 200, { repairs: await database.listRepairs(session) }, responseHeaders);
       return;
     }
     if (req.method === "POST" && pathname === "/api/repairs/import") {
