@@ -10,14 +10,14 @@ credenciales SMTP y de la base de datos solo viven en el servidor, nunca en el
 navegador ni en los instaladores.
 
 ```
-App web / Electron --https--> API Node.js -- PostgreSQL compartido
+App web / Electron --https--> API Node.js -- MySQL compartido
                                    |
                     +--------------+--------------+
                     |                             |
                     +--> SMTP --> Correo          +--> Meta Cloud API --> WhatsApp
 ```
 
-Requiere Node.js 20+, PostgreSQL, Nodemailer y el cliente `pg`.
+Requiere Node.js 20+, MySQL, Nodemailer y el driver `mysql2`.
 
 ## Desarrollo local
 
@@ -27,7 +27,19 @@ npm install
 cp .env.example .env     # en Windows: copy .env.example .env
 ```
 
-Configura `DATABASE_URL` con una base PostgreSQL de desarrollo, un `SESSION_SECRET`
+Crea primero la base de datos MySQL (la aplicacion crea sus tablas al iniciar):
+
+```sql
+CREATE DATABASE taller_digital CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'taller'@'localhost' IDENTIFIED BY 'replace-with-a-strong-password';
+GRANT ALL PRIVILEGES ON taller_digital.* TO 'taller'@'localhost';
+```
+
+Configura `DATABASE_URL` en `.env` con el formato `mysql://usuario:contrasena@host:3306/base`.
+Codifica en formato URL los caracteres especiales de usuario y contrasena.
+La aplicacion no importa ni migra automaticamente datos de una base PostgreSQL existente.
+
+Configura `DATABASE_URL` con una base MySQL de desarrollo, un `SESSION_SECRET`
 aleatorio de al menos 32 caracteres y las variables `ADMIN_EMAIL` y
 `ADMIN_PASSWORD` (mínimo 12 caracteres) para crear al primer administrador.
 Configura `MAIL_DRY_RUN=true` para que las pruebas no envíen correos. Después:
@@ -37,7 +49,7 @@ npm run dev
 curl http://localhost:3001/health        # {"status":"ok"}
 ```
 
-Las cuentas, órdenes, ajustes e inventario de la web se almacenan en PostgreSQL.
+Las cuentas, órdenes, ajustes e inventario de la web se almacenan en MySQL.
 La aplicación Electron sigue usando SQLite local y no se sincroniza con esta
 base. La creación pública de cuentas solo permite el rol de cliente; el
 administrador se inicializa con las variables de entorno anteriores.
@@ -58,7 +70,7 @@ $env:NOTIFY_URL="http://localhost:3001"; $env:NOTIFY_API_KEY="la-clave"; npm sta
 | `BUSINESS_*` | Nombre, teléfono, correo, dirección, horario y tiempo de respuesta que salen en el correo. |
 | `TRUST_PROXY` | `true` solo si hay nginx/Caddy delante; así los límites por IP usan la IP real. |
 | `RATE_LIMIT_IP_PER_HOUR` / `RATE_LIMIT_EMAIL_PER_HOUR` | Límites anti-abuso (30 y 5 por defecto). |
-| `DATABASE_SSL_CA` | CA PEM opcional de PostgreSQL. En producción siempre se valida el certificado TLS; define la CA si no es de confianza para Node.js. |
+| `DATABASE_SSL_CA` | CA PEM opcional de MySQL. En producción siempre se valida el certificado TLS; define la CA si no es de confianza para Node.js. |
 | `ALLOWED_ORIGINS` | Orígenes web autorizados; la app Electron local no lo necesita. |
 | `MAIL_DRY_RUN` | `true` = no envía, solo registra. |
 | `WHATSAPP_ACCESS_TOKEN` | Token privado de Meta para WhatsApp Cloud API. |
@@ -69,15 +81,15 @@ $env:NOTIFY_URL="http://localhost:3001"; $env:NOTIFY_API_KEY="la-clave"; npm sta
 
 ## Desplegar la web en Render
 
-La publicación usa tres recursos de Render: PostgreSQL, el Web Service de la API
-y un Static Site para React. El Web Service que ya aloja `server/` puede seguir
-con **Root Directory** `server`.
+Para publicar la web se necesita un Web Service de Render, un Static Site y una base
+MySQL de un proveedor externo. Render no ofrece MySQL administrado.
+El Web Service que aloja `server/` puede conservar **Root Directory** `server`.
 
-1. Crea una base **PostgreSQL** en Render. En el Web Service, añade `DATABASE_URL`
-   usando la URL interna de esa base. La conexión TLS de producción valida el
-   certificado; si Render o tu proveedor entrega una CA que Node.js no reconoce,
-   configura `DATABASE_SSL_CA` con el certificado PEM (puedes representar saltos
-   de línea como `\n`).
+1. Crea una base y un usuario MySQL con tu proveedor (MySQL 8 o posterior).
+   Configura `DATABASE_URL` en el Web Service como
+   `mysql://usuario:contrasena@host:3306/base`. Codifica caracteres especiales
+   de usuario y contrasena. En produccion se valida TLS; configura
+   `DATABASE_SSL_CA` en formato PEM si tu proveedor requiere un certificado propio.
 2. En el Web Service configura `NODE_ENV=production`, `SESSION_SECRET` (aleatorio,
    mínimo 32 caracteres), `ADMIN_EMAIL`, `ADMIN_PASSWORD` (mínimo 12 caracteres),
    y `NOTIFY_API_KEY` (mínimo 16 caracteres). Añade SMTP y pon
@@ -105,7 +117,7 @@ ejemplo `+573001234567`), autoriza el envío de mensajes de acceso, recibe un
 código de seis dígitos por WhatsApp y lo confirma en la web. Los códigos vencen
 a los 10 minutos, se consumen una sola vez y tienen intentos limitados. Al crear
 una reparación, el cliente debe autorizar por separado los mensajes de esa
-reparación; la autorización queda guardada en PostgreSQL. La orden se guarda
+reparación; la autorización queda guardada en MySQL. La orden se guarda
 antes de enviar su código por WhatsApp; si Meta falla, permanece guardada y el
 cliente puede reenviar el código desde su consulta. Las reparaciones antiguas
 no se enviarán por WhatsApp hasta que se haya registrado autorización.
@@ -119,7 +131,7 @@ pero no podrá enviar códigos ni completar el acceso de clientes web. El acceso
 administrativo sigue usando correo y contraseña.
 
 `PORT` lo asigna Render automáticamente. Configura `/health` como **Health Check
-Path** del Web Service. El esquema PostgreSQL se crea automáticamente al primer
+Path** del Web Service. El esquema MySQL se crea automáticamente al primer
 arranque. El primer administrador se crea una sola vez desde `ADMIN_EMAIL` y
 `ADMIN_PASSWORD`; no hay registro público de administradores.
 
@@ -127,16 +139,16 @@ La contraseña `ADMIN_PASSWORD` no se restablece cambiando la variable una vez
 creada la cuenta. Para cambiarla se debe añadir un flujo de cambio de contraseña
 autenticado antes de operar con cuentas reales.
 
-Solo la web usa PostgreSQL compartido. Electron mantiene `taller-digital.db` en
+Solo la web usa MySQL compartido. Electron mantiene `taller-digital.db` en
 cada computadora; esos datos no se sincronizan ni migran automáticamente a
-PostgreSQL.
+MySQL.
 
 Los límites anti-abuso se guardan en memoria y son por proceso. Mantén una sola
 instancia del Web Service para que los límites sean consistentes; antes de
 escalar a varias instancias, configura un limitador compartido (por ejemplo,
 Redis).
 
-Las pruebas de integración reales de PostgreSQL se ejecutan en CI. En local,
+Las pruebas de integración reales de MySQL se ejecutan en CI. En local,
 solo ejecutes `npm run test:integration` con `TEST_DATABASE_URL` apuntando a una
 base local cuyo nombre termine en `_test`; el test rechaza hosts externos para
 evitar modificar datos de producción.

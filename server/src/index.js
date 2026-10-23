@@ -53,9 +53,9 @@ if (config.databaseUrl) {
       adminPassword: config.adminPassword,
       hashPassword,
     });
-    log.info("Base de datos PostgreSQL lista.");
+    log.info("Base de datos MySQL lista.");
   } catch (error) {
-    log.error(`No se pudo preparar PostgreSQL: ${error.message}`);
+    log.error(`No se pudo preparar MySQL: ${error.message}`);
     await database?.close();
     process.exit(1);
   }
