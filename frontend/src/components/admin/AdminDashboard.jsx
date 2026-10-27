@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { repairStatuses } from "../../data/repairData";
 import { statusClass } from "../../utils/repairPresentation";
 
@@ -14,13 +15,12 @@ function Metric({ label, value, tone, icon, detail }) {
   );
 }
 
-export default function AdminDashboard({ repairs, onOpenOrders, onOpenReceipt }) {
+function AdminDashboard({ repairs, onOpenOrders, onOpenReceipt }) {
   const statusTotals = repairStatuses.map((status) => ({
     status,
     total: repairs.filter((repair) => repair.status === status).length,
   }));
   const deliveredCount = statusTotals.find((item) => item.status === "Entregado")?.total || 0;
-  const activeCount = repairs.length - deliveredCount;
   const recentRepairs = [...repairs]
     .sort((first, second) => {
       const firstDate = Date.parse(first.createdAt || first.updatedAt || "") || 0;
@@ -37,9 +37,6 @@ export default function AdminDashboard({ repairs, onOpenOrders, onOpenReceipt })
           <h2>Operaciones</h2>
           <p>Consulta el estado de las órdenes y la actividad reciente.</p>
         </div>
-        <button type="button" className="primary-button" onClick={onOpenOrders}>
-          Ver órdenes <span aria-label={`${repairs.length} órdenes`}>{repairs.length}</span>
-        </button>
       </section>
 
       <section className="dashboard-stats" aria-label="Resumen de órdenes">
@@ -61,18 +58,17 @@ export default function AdminDashboard({ repairs, onOpenOrders, onOpenReceipt })
         <Metric label="Entregadas" value={deliveredCount} tone="purple" icon="↥" detail="Finalizadas" />
       </section>
 
-      <div className="admin-dashboard-grid">
-        <section className="panel dashboard-activity">
-          <div className="panel-heading">
-            <div>
-              <h3>Actividad reciente</h3>
-              <p>Últimas órdenes registradas en el taller.</p>
-            </div>
-            <button type="button" className="text-button" onClick={onOpenOrders}>
-              Ver todas
-            </button>
+      <section className="panel dashboard-activity">
+        <div className="panel-heading">
+          <div>
+            <h3>Actividad reciente</h3>
+            <p>Últimas órdenes registradas en el taller.</p>
           </div>
-          {recentRepairs.length > 0 ? (
+          <button type="button" className="text-button" onClick={onOpenOrders}>
+            Ver todas
+          </button>
+        </div>
+          {recentRepairs.length > 0 && (
             <div className="dashboard-recent-list">
               {recentRepairs.map((repair) => (
                 <button
@@ -93,48 +89,10 @@ export default function AdminDashboard({ repairs, onOpenOrders, onOpenReceipt })
                 </button>
               ))}
             </div>
-          ) : (
-            <div className="dashboard-empty">
-              <span aria-hidden="true">▣</span>
-              <strong>Aún no hay órdenes</strong>
-              <p>Cuando se registre una solicitud, aparecerá aquí.</p>
-            </div>
           )}
         </section>
-
-        <section className="panel dashboard-workload">
-          <div className="panel-heading">
-            <div>
-              <h3>Estado de órdenes</h3>
-              <p>Distribución del trabajo actual.</p>
-            </div>
-          </div>
-          <div className="dashboard-status-list" aria-label="Órdenes por estado">
-            {statusTotals.map((item) => (
-              <div className="dashboard-status-row" key={item.status}>
-                <div>
-                  <span>{item.status}</span>
-                  <strong>{item.total}</strong>
-                </div>
-                <div
-                  className="dashboard-status-track"
-                  role="meter"
-                  aria-label={`${item.status}: ${item.total} de ${repairs.length} órdenes`}
-                  aria-valuemin="0"
-                  aria-valuemax={Math.max(repairs.length, 1)}
-                  aria-valuenow={item.total}
-                >
-                  <span style={{ width: `${repairs.length ? (item.total / repairs.length) * 100 : 0}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="dashboard-active-total">
-            <span>Órdenes activas</span>
-            <strong>{activeCount}</strong>
-          </div>
-        </section>
-      </div>
     </>
   );
 }
+
+export default memo(AdminDashboard);

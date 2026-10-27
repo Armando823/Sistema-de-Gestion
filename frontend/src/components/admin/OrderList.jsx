@@ -1,7 +1,8 @@
+import { memo } from "react";
 import { repairStatuses } from "../../data/repairData";
 import { statusClass } from "../../utils/repairPresentation";
 
-export default function OrderList({
+function OrderList({
   search,
   setSearch,
   filteredRepairs,
@@ -10,104 +11,82 @@ export default function OrderList({
   requestDelete,
   openReceipt,
 }) {
-  const pendingCount = filteredRepairs.filter(
-    (repair) => repair.status === "Recibido",
-  ).length;
-
   return (
     <section className="panel orders-panel">
-      <div className="panel-heading">
-        <div>
-          <h3>Solicitudes recibidas</h3>
-          <p>
-            {filteredRepairs.length} solicitud(es)
-            {pendingCount > 0 ? ` · ${pendingCount} pendiente(s)` : ""}
-          </p>
-        </div>
-        <div className="search-controls">
-          <input
-            maxLength="80"
-            className="search"
-            aria-label="Buscar solicitudes"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar solicitud o cliente"
-          />
-          {search && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => setSearch("")}
-            >
-              Limpiar
-            </button>
-          )}
-        </div>
+      <div className="orders-table-wrap">
+        <table className="orders-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Cliente</th>
+              <th>Equipo</th>
+              <th>Falla reportada</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRepairs.map((repair) => (
+              <tr key={repair.id}>
+                <td className="order-code">
+                  {repair.id}
+                  <small>{repair.updated}</small>
+                </td>
+                <td>{repair.customer}</td>
+                <td>{repair.device}</td>
+                <td className="order-problem">{repair.problem}</td>
+                <td>
+                  <span className={`status-badge ${statusClass(repair.status)}`}>
+                    {repair.status}
+                  </span>
+                  <select
+                    aria-label={`Estado de ${repair.id}`}
+                    value={repair.status}
+                    onChange={(event) => updateStatus(repair.id, event.target.value)}
+                  >
+                    {repairStatuses.map((status) => (
+                      <option key={status}>{status}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="order-actions">
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => openReceipt(repair)}
+                  >
+                    Constancia
+                  </button>
+                  <label className="text-button photo-update">
+                    Fotos
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(event) => updatePhotos(repair.id, event)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="text-button danger-text"
+                    onClick={() => requestDelete(repair.id)}
+                  >
+                    Eliminar
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {filteredRepairs.length === 0 && (
+              <tr>
+                <td colSpan="6" className="empty">No hay órdenes que coincidan.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
-      <div className="order-list">
-        {filteredRepairs.map((repair) => (
-          <article className="order" key={repair.id}>
-            <div className="order-id">
-              {repair.id}
-              <small>{repair.updated}</small>
-            </div>
-            <div>
-              <h4>{repair.device}</h4>
-              <p>
-                {repair.customer} · {repair.problem}
-              </p>
-              <small>
-                {repair.photos?.length || 0} foto(s) ·{" "}
-                {repair.authorizedBy
-                  ? "Autorizada"
-                  : repair.signature
-                    ? "Firmada"
-                    : "Sin autorización"}
-              </small>
-              <span className={`status-badge ${statusClass(repair.status)}`}>
-                {repair.status}
-              </span>
-              <label className="photo-update">
-                Agregar / actualizar fotos
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) => updatePhotos(repair.id, event)}
-                />
-              </label>
-            </div>
-            <select
-              aria-label={`Estado de ${repair.id}`}
-              value={repair.status}
-              onChange={(event) => updateStatus(repair.id, event.target.value)}
-            >
-              {repairStatuses.map((status) => (
-                <option key={status}>{status}</option>
-              ))}
-            </select>
-            <div className="order-actions">
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => openReceipt(repair)}
-              >
-                Constancia
-              </button>
-              <button
-                type="button"
-                className="text-button danger-text"
-                onClick={() => requestDelete(repair.id)}
-              >
-                Eliminar
-              </button>
-            </div>
-          </article>
-        ))}
-        {filteredRepairs.length === 0 && (
-          <p className="empty">No hay órdenes que coincidan.</p>
-        )}
-      </div>
+      <p className="orders-prototype-note">Prototipo con datos de ejemplo</p>
     </section>
   );
 }
+
+export default memo(OrderList);

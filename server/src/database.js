@@ -113,6 +113,12 @@ export function createDatabase(connectionString, { production = false, sslCa } =
     },
 
     async savePhoneLoginCode(phone, codeHash, expiresAt) {
+      const email = `whatsapp-${phone.replace(/\D/g, "")}@phone.invalid`;
+      await pool.execute(
+        `INSERT IGNORE INTO accounts (email, password_hash, role, phone)
+         VALUES (?, NULL, 'client', ?)`,
+        [email, phone],
+      );
       await pool.execute(
         `INSERT INTO phone_login_codes (phone, code_hash, expires_at, attempts)
          VALUES (?, ?, ?, 0)
@@ -592,13 +598,13 @@ export function createDatabase(connectionString, { production = false, sslCa } =
           return false;
         }
         const item = parseJson(rows[0].value, null);
-        await connection.execute("DELETE FROM inventory WHERE id = ?", [id]);
         await connection.execute(
           `INSERT INTO inventory_movements
             (item_id, item_name, action, quantity_delta, stock_after, actor_email)
            VALUES (?, ?, 'deleted', ?, NULL, ?)`,
           [id, item.item, -item.stock, actorEmail],
         );
+        await connection.execute("DELETE FROM inventory WHERE id = ?", [id]);
         await connection.commit();
         return true;
       } catch (error) {
@@ -630,3 +636,4 @@ export function createDatabase(connectionString, { production = false, sslCa } =
     close: () => pool.end(),
   };
 }
+ 

@@ -75,7 +75,7 @@ function receiptHtml(repair) {
   return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd>${repair.authorizedBy ? `<dt>Recibido por</dt><dd>${escapeHtml(repair.authorizedBy)}</dd>` : ""}</dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${signatureMarkup}</body></html>`;
 }
 
-function App({ version = "Final" }) {
+function App({ version = "2.4" }) {
   const [repairs, setRepairs] = useState([]);
   const [clientEmail, setClientEmail] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -643,10 +643,10 @@ function App({ version = "Final" }) {
               className="text-button"
               onClick={exportRepairs}
             >
-              Descargar respaldo
+              Exportar datos
             </button>
             <label className="text-button import-label">
-              Restaurar respaldo
+              Importar datos
               <input
                 ref={importInputRef}
                 className="file-input"
@@ -655,8 +655,6 @@ function App({ version = "Final" }) {
                 onChange={importRepairs}
               />
             </label>
-            <span className="admin-profile"><b>AD</b> Admin</span>
-            <button type="button" className="text-button" onClick={logout}>Cerrar sesión</button>
           </div>
         )}
       </header>

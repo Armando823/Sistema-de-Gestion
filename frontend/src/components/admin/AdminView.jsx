@@ -2,13 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import AdminDashboard from "./AdminDashboard";
 import OrderList from "./OrderList";
 import { repairStatuses } from "../../data/repairData";
-import { readImage } from "../../utils/image";
+
 import { toCsv } from "../../utils/csv";
 import {
   adjustInventoryStock,
   createInventoryItem,
   deleteInventoryItem,
-  deleteSetting,
   loadCustomerWarranties,
   loadInventory,
   readSetting,
@@ -32,24 +31,7 @@ export default function AdminView({
   setSettings,
   onNotice,
 }) {
-  const [activeSection, setActiveSection] = useState("dashboard");
-  const [companyLogo, setCompanyLogo] = useState("");
-  const [logoReady, setLogoReady] = useState(false);
-  useEffect(() => {
-    readSetting("workshop-logo", "").then((savedLogo) => {
-      setCompanyLogo(savedLogo || "");
-      setLogoReady(true);
-    }).catch((error) => onNotice(error.message || "No se pudo cargar el logo del taller."));
-  }, []);
-  useEffect(() => {
-    if (!logoReady) return;
-    const save = companyLogo
-      ? saveSetting("workshop-logo", companyLogo)
-      : deleteSetting("workshop-logo");
-    save.then((saved) => {
-      if (!saved) onNotice("No se pudo guardar el logo del taller.");
-    }).catch((error) => onNotice(error.message || "No se pudo guardar el logo del taller."));
-  }, [companyLogo, logoReady]);
+  const [activeSection, setActiveSection] = useState("orders");
   const [inventoryData, setInventoryData] = useState([]);
   const [inventoryReady, setInventoryReady] = useState(false);
   const [inventoryMutationBusy, setInventoryMutationBusy] = useState(false);
@@ -112,17 +94,6 @@ export default function AdminView({
 
   function showSettings() {
     setActiveSection("settings");
-  }
-
-  async function updateCompanyLogo(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      setCompanyLogo(await readImage(file, 500));
-    } catch {
-      setCompanyLogo("");
-    }
-    event.target.value = "";
   }
 
   function warrantyState(date) {
@@ -340,12 +311,6 @@ export default function AdminView({
   return (
     <div className={`admin-layout ${settings.darkMode ? "admin-dark" : ""}`}>
       <aside className="admin-sidebar" aria-label="Navegación administrativa">
-        <div className="sidebar-mark">MC</div>
-        <label className="company-logo-upload company-logo-hero" title="Cargar logo de empresa">
-          {companyLogo ? <img src={companyLogo} alt={`Logo de ${settings.businessName}`} /> : <span className="sidebar-illustration" aria-hidden="true">⌁</span>}
-          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={updateCompanyLogo} />
-          <span className="company-logo-hint">{companyLogo ? "Cambiar logo" : "Agregar logo"}</span>
-        </label>
         <div className="sidebar-title">
           <strong>{settings.businessName}</strong>
           <span>Sistema integral</span>
@@ -424,13 +389,28 @@ export default function AdminView({
             <section className="dashboard-heading">
               <div>
                 <p className="eyebrow">GESTIÓN DEL TALLER</p>
-                <h2>Órdenes de reparación</h2>
-                <p>Busca solicitudes, actualiza su estado y administra las constancias.</p>
+                <h2>Solicitudes recibidas</h2>
+                <p>Gestiona órdenes creadas por los clientes y agrega sus imágenes.</p>
               </div>
-              <div className="summary">
-                <strong>{filteredRepairs.length}</strong>
-                <span>{filteredRepairs.length === 1 ? "orden encontrada" : "órdenes encontradas"}</span>
-              </div>
+            </section>
+            <section className="order-summary-cards">
+              <article className="order-summary-card" style={{ borderLeftColor: "#16806d" }}>
+                <span>Órdenes totales</span>
+                <strong>{repairs.length}</strong>
+              </article>
+              <article className="order-summary-card" style={{ borderLeftColor: "#3b82f6" }}>
+                <span>En diagnóstico</span>
+                <strong>{repairs.filter((repair) => repair.status === "En diagnóstico").length}</strong>
+              </article>
+              <article className="order-summary-card" style={{ borderLeftColor: "#f97316" }}>
+                <span>En reparación</span>
+                <strong>{repairs.filter((repair) => repair.status === "En reparación").length}</strong>
+              </article>
+              <article className="order-summary-card" style={{ borderLeftColor: "#8b5cf6" }}>
+                <span>Entregadas</span>
+                <strong>{repairs.filter((repair) => repair.status === "Entregado").length}</strong>
+              </article>
+              <div className="order-summary-total">{repairs.length}</div>
             </section>
             <section id="admin-orders" className="workspace admin-orders-only">
               <OrderList
