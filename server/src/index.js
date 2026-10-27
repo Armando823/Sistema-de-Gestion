@@ -60,7 +60,8 @@ if (!config.mysqlUrl) {
     process.exit(1);
   }
 }
-const server = createApp({ config, mailer, database, whatsapp, log });
+const staticDir = process.env.STATIC_DIR || "/app/frontend/dist";
+const server = createApp({ config, mailer, database, whatsapp, log, staticDir });
 server.on("error", (error) => {
   log.error(`No se pudo iniciar el servidor: ${error.message}`);
   mailer.close();

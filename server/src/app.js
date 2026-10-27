@@ -1,5 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import { join, extname, resolve } from "node:path";
 import { createRateLimiter } from "./rateLimiter.js";
 import { parseReceiptRequest } from "./receiptEmail.js";
 import { verifySessionToken } from "./auth.js";
@@ -63,7 +65,7 @@ function parseJson(raw) {
   }
 }
 
-export function createApp({ config, mailer, database, whatsapp, log = console, now = Date.now, sleep }) {
+export function createApp({ config, mailer, database, whatsapp, log = console, now = Date.now, sleep, staticDir = null }) {
   const ipLimiter = createRateLimiter({ limit: config.limits.perIpPerHour, windowMs: HOUR, now });
   const emailLimiter = createRateLimiter({ limit: config.limits.perEmailPerHour, windowMs: HOUR, now });
   const authLimiter = createRateLimiter({ limit: 10, windowMs: 15 * 60 * 1000, now });
@@ -227,6 +229,25 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     const cors = corsHeaders(req);
     try {
       const { pathname } = new URL(req.url, "http://localhost");
+
+      // Servir archivos estáticos del frontend (SPA) si se configura staticDir.
+      if (staticDir && req.method === "GET" && !pathname.startsWith("/api/") && pathname !== "/health" && pathname !== "/ready") {
+        const safePath = resolve(staticDir, "." + pathname);
+        if (safePath.startsWith(resolve(staticDir)) && existsSync(safePath) && statSync(safePath).isFile()) {
+          const ext = extname(safePath).toLowerCase();
+          const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2" };
+          res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "public, max-age=31536000, immutable" });
+          createReadStream(safePath).pipe(res);
+          return;
+        }
+        // SPA fallback
+        const indexFile = join(staticDir, "index.html");
+        if (existsSync(indexFile)) {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          createReadStream(indexFile).pipe(res);
+          return;
+        }
+      }
 
       if (req.method === "OPTIONS") {
         res.writeHead(204, { ...securityHeaders(), ...cors });
