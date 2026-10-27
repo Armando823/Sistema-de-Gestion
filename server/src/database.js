@@ -130,6 +130,31 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       );
     },
 
+    async saveSession(id, email, role, phone, expiresAt) {
+      await pool.execute(
+        `INSERT INTO sessions (id, email, role, phone, expires_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE expires_at = VALUES(expires_at)`,
+        [id, email, role, phone || null, new Date(expiresAt)],
+      );
+    },
+
+    async isSessionValid(id) {
+      const [rows] = await pool.execute(
+        "SELECT 1 FROM sessions WHERE id = ? AND expires_at > NOW() LIMIT 1",
+        [id],
+      );
+      return rows.length > 0;
+    },
+
+    async revokeSession(id) {
+      await pool.execute("DELETE FROM sessions WHERE id = ?", [id]);
+    },
+
+    async revokeSessionsForAccount(email) {
+      await pool.execute("DELETE FROM sessions WHERE email = ?", [email]);
+    },
+
     async consumePhoneLoginCode(phone, codeHash, now) {
       const connection = await pool.getConnection();
       try {

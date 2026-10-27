@@ -1,8 +1,9 @@
-import { createHmac, randomInt } from "node:crypto";
+import { createHmac, randomInt, randomUUID } from "node:crypto";
 import {
   createSessionToken,
   hashPassword,
   normalizeEmail,
+  TOKEN_TTL_SECONDS,
   validateCredentials,
   verifyPassword,
 } from "../auth.js";
@@ -17,6 +18,7 @@ export function createAuthHandlers({
   config,
   requireDatabase,
   requireSession,
+  getSession,
   readBody,
   parseJson,
   send,
@@ -41,10 +43,16 @@ export function createAuthHandlers({
   async function handleAuth(req, res, pathname, cors) {
     requireDatabase();
     if (req.method === "GET" && pathname === "/api/auth/me") {
-      const session = requireSession(req);
+      const session = await requireSession(req);
       send(res, 200, {
         account: { email: session.email, role: session.role, phone: session.phone },
       }, cors);
+      return;
+    }
+    if (req.method === "POST" && pathname === "/api/auth/logout") {
+      const session = await getSession(req);
+      if (session?.sid && typeof database?.revokeSession === "function") await database.revokeSession(session.sid);
+      send(res, 200, { ok: true }, cors);
       return;
     }
     if (req.method === "POST" && pathname === "/api/auth/phone/request") {
@@ -97,7 +105,11 @@ export function createAuthHandlers({
         throw new HttpError(403, "Esta cuenta no puede ingresar desde el acceso de cliente.");
       }
       const account = { email: stored.email, role: stored.role, phone: stored.phone };
-      const token = createSessionToken(account, config.sessionSecret, now());
+      const sid = randomUUID();
+      const token = createSessionToken(account, config.sessionSecret, now(), sid);
+      if (typeof database?.saveSession === "function") {
+        await database.saveSession(sid, account.email, account.role, account.phone, now() + TOKEN_TTL_SECONDS * 1000);
+      }
       send(res, 200, { token, account }, cors);
       return;
     }
@@ -128,7 +140,11 @@ export function createAuthHandlers({
     const valid = stored && await verifyPassword(body.password, stored.passwordHash);
     if (!valid) throw new HttpError(401, "El correo o la contraseña no son correctos.");
     account = { email: stored.email, role: stored.role };
-    const token = createSessionToken(account, config.sessionSecret, now());
+    const sid = randomUUID();
+    const token = createSessionToken(account, config.sessionSecret, now(), sid);
+    if (typeof database?.saveSession === "function") {
+      await database.saveSession(sid, account.email, account.role, account.phone, now() + TOKEN_TTL_SECONDS * 1000);
+    }
     send(res, 200, { token, account }, cors);
   }
 

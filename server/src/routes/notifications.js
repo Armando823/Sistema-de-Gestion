@@ -39,7 +39,7 @@ export function createNotificationHandlers({
 }) {
   async function handleWhatsAppRepairCode(req, res, cors) {
     requireDatabase();
-    const session = requireSession(req);
+    const session = await requireSession(req);
     if (req.method !== "POST") {
       throw new HttpError(405, "Método no permitido.", { Allow: "POST, OPTIONS" });
     }
@@ -91,7 +91,7 @@ export function createNotificationHandlers({
       });
     }
 
-    const session = getSession(req);
+    const session = await getSession(req);
     const authorizedWithApiKey = config.apiKey && sameSecret(req.headers["x-api-key"], config.apiKey);
     if (!authorizedWithApiKey && !session) {
       throw new HttpError(401, "No autorizado.");

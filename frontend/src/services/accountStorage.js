@@ -7,7 +7,7 @@ import {
 } from "./dbService";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PASSWORD_LENGTH = 8;
+const MIN_PASSWORD_LENGTH = 10;
 const MAX_PASSWORD_LENGTH = 200;
 
 function normalizeEmail(email) {
@@ -23,6 +23,9 @@ function validateCredentials(email, password) {
     return `La contraseña debe tener mínimo ${MIN_PASSWORD_LENGTH} caracteres.`;
   }
   if (password.length > MAX_PASSWORD_LENGTH) return "La contraseña es demasiado larga.";
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    return "La contraseña debe incluir al menos una letra y un número.";
+  }
   return "";
 }
 

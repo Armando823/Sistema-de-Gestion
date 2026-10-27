@@ -1,18 +1,29 @@
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual, createHmac } from "node:crypto";
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual, createHmac, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 
 const scrypt = promisify(scryptCallback);
-const TOKEN_TTL_SECONDS = 60 * 60 * 12;
+export const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function normalizeEmail(email) {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
 }
 
+const COMMON_PASSWORDS = new Set([
+  "password", "123456", "12345678", "qwerty", "abc123", "password1",
+  "111111", "123456789", "admin", "letmein", "welcome", "monkey",
+]);
+
 export function validateCredentials(email, password) {
   if (!EMAIL_PATTERN.test(email) || email.length > 254) return "El correo no es válido.";
-  if (typeof password !== "string" || password.length < 8 || password.length > 200) {
-    return "La contraseña debe tener entre 8 y 200 caracteres.";
+  if (typeof password !== "string" || password.length < 10 || password.length > 200) {
+    return "La contraseña debe tener entre 10 y 200 caracteres.";
+  }
+  if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+    return "La contraseña es demasiado común. Elige otra.";
+  }
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    return "La contraseña debe incluir al menos una letra y un número.";
   }
   return "";
 }
@@ -33,10 +44,11 @@ export async function verifyPassword(password, stored) {
   return timingSafeEqual(actual, expected);
 }
 
-export function createSessionToken(account, secret, now = Date.now()) {
+export function createSessionToken(account, secret, now = Date.now(), sid = randomUUID()) {
   const payload = Buffer.from(JSON.stringify({
     email: account.email,
     role: account.role,
+    sid,
     ...(account.phone ? { phone: account.phone } : {}),
     exp: Math.floor(now / 1000) + TOKEN_TTL_SECONDS,
   })).toString("base64url");
@@ -60,11 +72,13 @@ export function verifySessionToken(token, secret, now = Date.now()) {
     const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (typeof session.email !== "string" ||
         !["admin", "client"].includes(session.role) ||
+        typeof session.sid !== "string" ||
         !Number.isInteger(session.exp) ||
         session.exp <= Math.floor(now / 1000)) return null;
     return {
       email: session.email,
       role: session.role,
+      sid: session.sid,
       ...(typeof session.phone === "string" ? { phone: session.phone } : {}),
     };
   } catch {

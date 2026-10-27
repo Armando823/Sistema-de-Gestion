@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { createRateLimiter } from "./rateLimiter.js";
 import { parseReceiptRequest } from "./receiptEmail.js";
 import { verifySessionToken } from "./auth.js";
@@ -81,13 +82,27 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     return req.socket.remoteAddress || "unknown";
   }
 
+  function securityHeaders() {
+    const headers = {
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    };
+    if (config.production) {
+      headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    }
+    return headers;
+  }
+
   function send(res, status, payload, headers = {}) {
     const body = JSON.stringify(payload);
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
       "Content-Length": Buffer.byteLength(body),
       "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
+      ...securityHeaders(),
       ...headers,
     });
     res.end(body);
@@ -111,20 +126,26 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     if (!database) throw new HttpError(503, "La base de datos compartida no está configurada.");
   }
 
-  function getSession(req) {
+  async function getSession(req) {
     const authorization = String(req.headers.authorization || "");
     const match = /^Bearer\s+(.+)$/i.exec(authorization);
-    return match ? verifySessionToken(match[1], config.sessionSecret, now()) : null;
+    if (!match) return null;
+    const session = verifySessionToken(match[1], config.sessionSecret, now());
+    if (!session) return null;
+    if (session.sid && typeof database?.isSessionValid === "function") {
+      if (!(await database.isSessionValid(session.sid))) return null;
+    }
+    return session;
   }
 
-  function requireSession(req) {
-    const session = getSession(req);
+  async function requireSession(req) {
+    const session = await getSession(req);
     if (!session) throw new HttpError(401, "Inicia sesión para continuar.");
     return session;
   }
 
-  function requireAdmin(req) {
-    const session = requireSession(req);
+  async function requireAdmin(req) {
+    const session = await requireSession(req);
     if (session.role !== "admin") throw new HttpError(403, "No tienes permisos para esta operación.");
     return session;
   }
@@ -158,6 +179,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     config,
     requireDatabase,
     requireSession,
+    getSession,
     readBody,
     parseJson,
     send,
@@ -199,12 +221,15 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
     HttpError,
   });
   const server = http.createServer(async (req, res) => {
+    const requestId = randomUUID();
+    req.requestId = requestId;
+    res.setHeader("X-Request-Id", requestId);
     const cors = corsHeaders(req);
     try {
       const { pathname } = new URL(req.url, "http://localhost");
 
       if (req.method === "OPTIONS") {
-        res.writeHead(204, cors);
+        res.writeHead(204, { ...securityHeaders(), ...cors });
         res.end();
         return;
       }
@@ -264,7 +289,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       if (error instanceof HttpError) {
         send(res, error.status, { ok: false, error: error.message }, { ...cors, ...error.headers });
       } else {
-        log.error(`Error inesperado: ${error?.stack || error}`);
+        log.error(`[${requestId}] Error inesperado: ${error?.stack || error}`);
         if (!res.headersSent) {
           const status = ["23505", "ER_DUP_ENTRY"].includes(error?.code) ? 409 : 500;
           send(res, status, { ok: false, error: status === 409 ? "El registro ya existe." : "Error interno." }, cors);

@@ -96,6 +96,22 @@ export function clearSharedSession() {
   sessionStorage.removeItem(SESSION_KEY);
 }
 
+export async function logoutSharedSession() {
+  const token = readWebSession()?.token;
+  if (token) {
+    try {
+      await fetch(`${apiBase}/api/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // Ignora errores de red; la sesión local se limpia igualmente.
+    }
+    repairSnapshots.delete(token);
+  }
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
 export async function lookupSharedRepair(id, phone) {
   return (await request("/api/repairs/lookup", {
     method: "POST",

@@ -44,7 +44,7 @@ function parseInventoryItem(item) {
 export function createAdminHandlers({ database, requireDatabase, requireAdmin, readBody, parseJson, send, HttpError }) {
   async function handleCustomerWarranties(req, res, pathname, cors) {
     requireDatabase();
-    const session = requireAdmin(req);
+    const session = await requireAdmin(req);
     if (req.method === "GET" && pathname === "/api/customers/warranties") {
       send(res, 200, { warranties: await database.listCustomerWarranties() }, cors);
       return;
@@ -63,7 +63,7 @@ export function createAdminHandlers({ database, requireDatabase, requireAdmin, r
 
   async function handleInventory(req, res, pathname, cors) {
     requireDatabase();
-    const session = requireAdmin(req);
+    const session = await requireAdmin(req);
     if (req.method === "GET" && pathname === "/api/inventory") {
       send(res, 200, { items: await database.loadInventory() }, cors);
       return;

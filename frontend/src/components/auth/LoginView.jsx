@@ -245,11 +245,11 @@ export default function LoginView({ onClientLogin, onClientRegister, onAdminLogi
                 <input
                   required
                   type="password"
-                  minLength={8}
+                  minLength={10}
                   autoComplete="current-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Mínimo 8 caracteres"
+                  placeholder="Mínimo 10 caracteres, letra y número"
                 />
               </label>
               {error && <p className="form-error" role="alert">{error}</p>}
@@ -284,11 +284,11 @@ export default function LoginView({ onClientLogin, onClientRegister, onAdminLogi
                 <input
                   required
                   type="password"
-                  minLength={8}
+                  minLength={10}
                   autoComplete="new-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Mínimo 8 caracteres"
+                  placeholder="Mínimo 10 caracteres, letra y número"
                 />
               </label>
               <label>
@@ -296,7 +296,7 @@ export default function LoginView({ onClientLogin, onClientRegister, onAdminLogi
                 <input
                   required
                   type="password"
-                  minLength={8}
+                  minLength={10}
                   autoComplete="new-password"
                   value={passwordConfirmation}
                   onChange={(event) => setPasswordConfirmation(event.target.value)}

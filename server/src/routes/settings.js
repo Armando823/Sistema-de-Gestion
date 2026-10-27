@@ -9,7 +9,7 @@ export function createSettingsHandlers({
 }) {
   async function handleSettings(req, res, pathname, cors) {
     requireDatabase();
-    const session = requireSession(req);
+    const session = await requireSession(req);
     const key = decodeURIComponent(pathname.slice("/api/settings/".length));
     if (!["workshop-settings", "workshop-logo", "workshop-warranties"].includes(key)) {
       throw new HttpError(404, "No encontrado.");

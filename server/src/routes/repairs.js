@@ -98,7 +98,7 @@ export function createRepairHandlers({
 }) {
   async function handleRepairs(req, res, pathname, cors) {
     requireDatabase();
-    const session = requireSession(req);
+    const session = await requireSession(req);
     if (req.method === "POST" && pathname === "/api/repairs/next-id") {
       send(res, 200, { id: await database.nextRepairId() }, cors);
       return;
@@ -121,7 +121,7 @@ export function createRepairHandlers({
       return;
     }
     if (req.method === "POST" && pathname === "/api/repairs/import") {
-      const adminSession = requireAdmin(req);
+      const adminSession = await requireAdmin(req);
       const body = parseJson(await readBody(req, config.limits.repairImportBytes));
       const repair = normalizeBackupRepair(body?.repair, parseReceiptRequest);
       if (!repair) throw new HttpError(422, "La orden del respaldo no es válida.");
@@ -147,7 +147,7 @@ export function createRepairHandlers({
     }
     const updateMatch = /^\/api\/repairs\/(REP-\d{4,8})$/.exec(pathname);
     if (req.method === "PATCH" && updateMatch) {
-      const adminSession = requireAdmin(req);
+      const adminSession = await requireAdmin(req);
       const body = parseJson(await readBody(req, config.limits.bodyBytes));
       const patch = body?.patch;
       if (!Number.isSafeInteger(body?.expectedVersion) || body.expectedVersion < 1 ||
@@ -185,7 +185,7 @@ export function createRepairHandlers({
     }
     const historyMatch = /^\/api\/repairs\/(REP-\d{4,8})\/status-history$/.exec(pathname);
     if (req.method === "GET" && historyMatch) {
-      requireAdmin(req);
+      await requireAdmin(req);
       const query = new URL(req.url, "http://localhost").searchParams;
       const pagination = parseCursorPagination(query);
       if (!pagination) {
@@ -202,7 +202,7 @@ export function createRepairHandlers({
     }
     const deleteMatch = /^\/api\/repairs\/(REP-\d{4,8})$/.exec(pathname);
     if (req.method === "DELETE" && deleteMatch) {
-      requireAdmin(req);
+      await requireAdmin(req);
       await database.deleteRepair(deleteMatch[1]);
       send(res, 200, { ok: true }, cors);
       return;

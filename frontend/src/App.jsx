@@ -25,6 +25,7 @@ import {
   saveSetting,
   updateSharedRepair,
   importSharedRepair,
+  logoutSharedSession,
 } from "./services/dbService";
 import { readImage } from "./utils/image";
 import { createRepairBackup, getBackupRepairs, isValidBackupRepair } from "./utils/repairBackup";
@@ -562,7 +563,8 @@ function App({ version = "2.4" }) {
 
   const isAdmin = role === "admin";
 
-  function logout() {
+  async function logout() {
+    await logoutSharedSession();
     setRole(null);
     setClientEmail("");
     setClientPhone("");
