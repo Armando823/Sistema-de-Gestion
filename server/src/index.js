@@ -48,6 +48,10 @@ if (!config.mysqlUrl) {
       production: config.production,
       sslCa: config.mysqlSslCa,
     });
+    if (process.env.RUN_MIGRATIONS === "true") {
+      const result = await database.migrate();
+      log.info(`Migraciones aplicadas: ${result.applied}. Versión actual: ${result.current}.`);
+    }
     await database.initialize({
       adminEmail: config.adminEmail,
       adminPassword: config.adminPassword,
