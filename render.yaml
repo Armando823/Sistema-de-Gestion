@@ -1,58 +1,33 @@
-# Render Blueprint (opcional). Requiere una base de datos MySQL externa.
-services:
-  - type: web
-    name: taller-digital-api
-    runtime: docker
-    dockerfilePath: ./server/Dockerfile
-    dockerContext: ./server
-    healthCheckPath: /health
-    preDeployCommand: npm run migrate
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: HOST
-        value: 0.0.0.0
-      - key: PORT
-        value: 10000
-      - key: MYSQL_URL
+# Exported from Render on 2026-10-27T01:23:27Z
+version: "1"
+projects:
+- name: Prueva
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: electronicservis-api
+      runtime: docker
+      repo: https://github.com/Armando823/Sistema-de-Gestion
+      plan: free
+      envVars:
+      - key: BUSINESS_NAME
         sync: false
-      - key: MYSQL_SSL_CA
+      - key: TRUST_PROXY
         sync: false
-      - key: SESSION_SECRET
-        generateValue: true
-      - key: ADMIN_EMAIL
+      - key: MAIL_DRY_RUN
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
-      - key: ALLOWED_ORIGINS
+      - key: ADMIN_EMAIL
         sync: false
-      - key: NOTIFY_API_KEY
+      - key: SESSION_SECRET
         sync: false
-      - key: MAIL_FROM
+      - key: NODE_ENV
         sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: WHATSAPP_ACCESS_TOKEN
-        sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
-        sync: false
-      - key: TRUST_PROXY
-        value: "true"
-  - type: web
-    name: taller-digital-web
-    runtime: static
-    buildCommand: npm --prefix frontend ci && npm --prefix frontend run build
-    staticPublishPath: frontend/dist
-    envVars:
-      - key: VITE_API_URL
-        sync: false
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
+      region: virginia
+      dockerCommand: sh -c "node src/migrate.js && node src/index.js"
+      dockerContext: .
+      dockerfilePath: ./Dockerfile
+      autoDeployTrigger: commit
+      rootDir: server/
