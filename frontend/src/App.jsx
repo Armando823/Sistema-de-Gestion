@@ -501,7 +501,7 @@ function App({ version = "2.4" }) {
   async function handlePhoneLogin(phone, code) {
     try {
       const account = await loginSharedPhone(phone, code);
-      if (account.role !== "client") {
+      if (!account || account.role !== "client") {
         await clearClientSession();
         return { error: "Esta cuenta no puede ingresar desde el acceso de cliente." };
       }

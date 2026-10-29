@@ -55,6 +55,7 @@ export async function authenticateClient(email, password) {
 
   try {
     const account = await loginSharedAccount(normalizedEmail, password);
+    if (!account) return { error: "No se pudo iniciar sesión. Inténtalo de nuevo." };
     if (account.role !== "client") {
       await clearClientSession();
       return { error: "Usa el acceso administrativo para esta cuenta." };
@@ -68,6 +69,7 @@ export async function authenticateClient(email, password) {
 export async function authenticateAdmin(email, password) {
   try {
     const account = await loginSharedAccount(normalizeEmail(email), password);
+    if (!account) return { error: "No se pudo iniciar sesión. Inténtalo de nuevo." };
     if (account.role !== "admin") {
       await clearClientSession();
       return { error: "Esta cuenta no tiene permisos de administrador." };
