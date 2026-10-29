@@ -40,7 +40,6 @@ services:
     runtime: static
     repo: https://github.com/Armando823/Sistema-de-Gestion
     plan: free
-    region: oregon
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
