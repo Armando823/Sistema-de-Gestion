@@ -39,7 +39,6 @@ services:
     name: electronicservis-web
     runtime: static
     repo: https://github.com/Armando823/Sistema-de-Gestion
-    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
