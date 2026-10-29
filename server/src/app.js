@@ -89,7 +89,7 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "strict-origin-when-cross-origin",
-      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+      "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'",
       "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     };
     if (config.production) {
@@ -235,15 +235,16 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
         const safePath = resolve(staticDir, "." + pathname);
         if (safePath.startsWith(resolve(staticDir)) && existsSync(safePath) && statSync(safePath).isFile()) {
           const ext = extname(safePath).toLowerCase();
-          const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2" };
-          res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "public, max-age=31536000, immutable" });
+          const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2" };
+          const cacheControl = ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable";
+          res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": cacheControl, ...securityHeaders() });
           createReadStream(safePath).pipe(res);
           return;
         }
         // SPA fallback
         const indexFile = join(staticDir, "index.html");
         if (existsSync(indexFile)) {
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", ...securityHeaders() });
           createReadStream(indexFile).pipe(res);
           return;
         }

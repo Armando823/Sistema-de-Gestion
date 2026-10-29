@@ -42,7 +42,7 @@ export function loadConfig(env = process.env) {
       orderTemplate: env.WHATSAPP_ORDER_TEMPLATE || "repair_order_code",
       templateLanguage: env.WHATSAPP_TEMPLATE_LANGUAGE || "es",
     },
-    trustProxy: toBool(env.TRUST_PROXY),
+    trustProxy: (env.TRUST_PROXY === undefined || env.TRUST_PROXY === "") ? production : toBool(env.TRUST_PROXY),
     allowedOrigins: (env.ALLOWED_ORIGINS || "")
       .split(",")
       .map((origin) => origin.trim())

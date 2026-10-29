@@ -1,33 +1,56 @@
-# Exported from Render on 2026-10-27T01:23:27Z
 version: "1"
-projects:
-- name: Prueva
-  environments:
-  - name: Production
-    services:
-    - type: web
-      name: electronicservis-api
-      runtime: docker
-      repo: https://github.com/Armando823/Sistema-de-Gestion
-      plan: free
-      envVars:
-      - key: BUSINESS_NAME
-        sync: false
+services:
+  - type: web
+    name: electronicservis-api
+    runtime: node
+    repo: https://github.com/Armando823/Sistema-de-Gestion
+    plan: free
+    region: oregon
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: RUN_MIGRATIONS
+        value: "true"
       - key: TRUST_PROXY
-        sync: false
+        value: "true"
       - key: MAIL_DRY_RUN
-        sync: false
-      - key: ADMIN_PASSWORD
+        value: "true"
+      - key: BUSINESS_NAME
+        value: "Taller Digital"
+      - key: SESSION_SECRET
         sync: false
       - key: ADMIN_EMAIL
         sync: false
-      - key: SESSION_SECRET
+      - key: ADMIN_PASSWORD
         sync: false
-      - key: NODE_ENV
+      - key: MYSQL_URL
         sync: false
-      region: virginia
-      dockerCommand: sh -c "node src/migrate.js && node src/index.js"
-      dockerContext: .
-      dockerfilePath: ./Dockerfile
-      autoDeployTrigger: commit
-      rootDir: server/
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  - type: web
+    name: electronicservis-web
+    runtime: static
+    repo: https://github.com/Armando823/Sistema-de-Gestion
+    plan: free
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

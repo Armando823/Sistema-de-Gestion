@@ -43,25 +43,31 @@ if (!config.mysqlUrl) {
     log.error("ADMIN_EMAIL o ADMIN_PASSWORD no cumplen el formato requerido.");
     process.exit(1);
   }
-  try {
-    database = createDatabase(config.mysqlUrl, {
-      production: config.production,
-      sslCa: config.mysqlSslCa,
-    });
-    if (process.env.RUN_MIGRATIONS === "true") {
-      const result = await database.migrate();
-      log.info(`Migraciones aplicadas: ${result.applied}. Versión actual: ${result.current}.`);
+  const maxAttempts = 5;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      database = createDatabase(config.mysqlUrl, {
+        production: config.production,
+        sslCa: config.mysqlSslCa,
+      });
+      if (process.env.RUN_MIGRATIONS === "true") {
+        const result = await database.migrate();
+        log.info(`Migraciones aplicadas: ${result.applied}. Versión actual: ${result.current}.`);
+      }
+      await database.initialize({
+        adminEmail: config.adminEmail,
+        adminPassword: config.adminPassword,
+        hashPassword,
+      });
+      log.info("Base de datos MySQL lista.");
+      break;
+    } catch (error) {
+      log.error(`No se pudo preparar MySQL (intento ${attempt}/${maxAttempts}): ${error.message}`);
+      await database?.close();
+      database = null;
+      if (attempt === maxAttempts) process.exit(1);
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
     }
-    await database.initialize({
-      adminEmail: config.adminEmail,
-      adminPassword: config.adminPassword,
-      hashPassword,
-    });
-    log.info("Base de datos MySQL lista.");
-  } catch (error) {
-    log.error(`No se pudo preparar MySQL: ${error.message}`);
-    await database?.close();
-    process.exit(1);
   }
 }
 const staticDir = process.env.STATIC_DIR || "/app/frontend/dist";
