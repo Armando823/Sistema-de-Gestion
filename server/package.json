@@ -5,17 +5,15 @@
   "type": "module",
   "description": "API central del sistema web de gestión de reparaciones",
   "main": "src/index.js",
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=24" },
   "scripts": {
     "start": "node ./src/index.js",
     "dev": "node --env-file=.env src/index.js",
     "migrate": "node ./src/migrate.js",
     "migrate:dev": "node --env-file=.env src/migrate.js",
-      "backup": "node ./scripts/backup.mjs",
-      "backup:dev": "node --env-file=.env scripts/backup.mjs",
-    "test": "node --test test/server.test.mjs",
+    "backup": "node ./scripts/backup.mjs",
+    "backup:dev": "node --env-file=.env scripts/backup.mjs",
+    "test": "node --test test/server.test.mjs test/backup.test.mjs",
     "test:integration": "node --test test/database.integration.test.mjs test/migrations.integration.test.mjs"
   },
   "dependencies": {
