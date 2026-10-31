@@ -23,6 +23,12 @@ const allMigrations = [
   "010_audit_history.sql",
   "011_inventory_movements.sql",
   "012_repair_sync_revision.sql",
+  "013_repair_history_foreign_keys.sql",
+  "014_inventory_movements_item_nullable.sql",
+  "015_inventory_movements_foreign_keys.sql",
+  "016_customer_warranties_updated_by_fk.sql",
+  "017_phone_login_codes_phone_fk.sql",
+  "018_sessions.sql",
 ];
 
 test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder datos", {
@@ -145,7 +151,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
     freshDatabase.migrate(),
     secondFreshDatabase.migrate(),
   ]);
-  assert.deepEqual(parallelResults.map(({ applied }) => applied).sort(), [0, 12]);
+  assert.deepEqual(parallelResults.map(({ applied }) => applied).sort(), [0, 18]);
   assert.equal((await freshDatabase.migrate()).applied, 0);
   assert.deepEqual(
     await queryDatabase(
@@ -208,7 +214,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
       databaseNames[0],
       "SELECT COUNT(*) AS tableCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()",
     ))[0].tableCount),
-    11,
+    12,
   );
 
   await executeFiles(databaseNames[1], baseMigrations);
@@ -242,7 +248,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   } finally {
     await repairRecovery.end();
   }
-  assert.equal((await legacyDatabase.migrate()).applied, 6);
+  assert.equal((await legacyDatabase.migrate()).applied, 12);
   assert.deepEqual(
     await queryDatabase(
       databaseNames[1],
@@ -256,7 +262,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
     allMigrations.length,
   );
 
-  await executeFiles(databaseNames[2], allMigrations);
+  await executeFiles(databaseNames[2], allMigrations.slice(0, 12));
   await seedRepair(databaseNames[2], "REP-91000002");
   const currentUrl = new URL(connectionString);
   currentUrl.pathname = `/${databaseNames[2]}`;
@@ -267,6 +273,10 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
       ["REP-91000002"],
     );
     await currentSetup.execute(
+      "INSERT INTO accounts (email, password_hash, role, phone) VALUES (?, NULL, 'admin', ?)",
+      ["admin@example.test", "+573001234568"],
+    );
+    await currentSetup.execute(
       "INSERT INTO customer_warranties (customer_key, expires_on, updated_by) VALUES (?, ?, ?)",
       ["email:migration@example.test", "2027-02-28", "admin@example.test"],
     );
@@ -275,7 +285,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   }
 
   const currentDatabase = createTestDatabase(databaseNames[2]);
-  assert.equal((await currentDatabase.migrate()).applied, 6);
+  assert.equal((await currentDatabase.migrate()).applied, 12);
   assert.deepEqual(
     await queryDatabase(
       databaseNames[2],
