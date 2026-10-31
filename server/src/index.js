@@ -80,7 +80,7 @@ server.on("error", (error) => {
 });
 server.listen(config.port, config.host, async () => {
   log.info(`Servicio de notificaciones escuchando en ${config.host}:${config.port}`);
-  if (!config.apiKey) log.warn("NOTIFY_API_KEY está vacía: cualquiera que llegue al servicio puede enviar correos.");
+  if (!config.apiKey) log.info("NOTIFY_API_KEY no está configurada; el envío de constancias requiere una sesión autenticada.");
   try {
     await mailer.verify();
     log.info("Conexión SMTP verificada.");
