@@ -285,7 +285,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   }
 
   const currentDatabase = createTestDatabase(databaseNames[2]);
-  assert.equal((await currentDatabase.migrate()).applied, 6);
+  assert.equal((await currentDatabase.migrate()).applied, 12);
   assert.deepEqual(
     await queryDatabase(
       databaseNames[2],
