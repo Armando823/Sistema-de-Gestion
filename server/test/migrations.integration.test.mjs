@@ -23,6 +23,12 @@ const allMigrations = [
   "010_audit_history.sql",
   "011_inventory_movements.sql",
   "012_repair_sync_revision.sql",
+  "013_repair_history_foreign_keys.sql",
+  "014_inventory_movements_item_nullable.sql",
+  "015_inventory_movements_foreign_keys.sql",
+  "016_customer_warranties_updated_by_fk.sql",
+  "017_phone_login_codes_phone_fk.sql",
+  "018_sessions.sql",
 ];
 
 test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder datos", {
@@ -225,7 +231,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   }
 
   const legacyDatabase = createTestDatabase(databaseNames[1]);
-  await assert.rejects(legacyDatabase.migrate(), /repair_revisions\.repair_id/);
+  await assert.rejects(legacyDatabase.migrate(), /repair_revisions\\.repair_id/);
   const failedHistory = await queryDatabase(
     databaseNames[1],
     "SELECT migration_id FROM schema_migrations ORDER BY migration_id",
@@ -242,7 +248,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   } finally {
     await repairRecovery.end();
   }
-  assert.equal((await legacyDatabase.migrate()).applied, 6);
+  assert.equal((await legacyDatabase.migrate()).applied, 12);
   assert.deepEqual(
     await queryDatabase(
       databaseNames[1],
@@ -275,7 +281,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   }
 
   const currentDatabase = createTestDatabase(databaseNames[2]);
-  assert.equal((await currentDatabase.migrate()).applied, 6);
+  assert.equal((await currentDatabase.migrate()).applied, 12);
   assert.deepEqual(
     await queryDatabase(
       databaseNames[2],
