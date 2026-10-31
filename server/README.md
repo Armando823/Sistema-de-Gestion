@@ -2,7 +2,7 @@
 
 API central Node.js para la aplicación web. Las cuentas, reparaciones, ajustes,
 inventario y códigos de acceso viven en MySQL; la API no usa PostgreSQL ni
-almacenamiento local. Requiere Node.js 20+ y MySQL 8+.
+almacenamiento local. Requiere Node.js 24 LTS y MySQL 8+.
 
 ## Desarrollo local
 
@@ -111,6 +111,12 @@ modifica el repuesto; su consulta
 limita cada página a 100 movimientos y conserva los eventos aunque se borre la
 orden o el repuesto asociado.
 
+## Respaldos de base de datos
+
+El comando `npm run backup` lee usuario, contraseña, host y base desde `MYSQL_URL`; no requiere duplicar la contraseña en `MYSQL_PASSWORD`. Usa `mysqldump` compatible con MySQL 8 y TLS con verificación de identidad del servidor. Si el proveedor entrega una CA privada, configura `MYSQL_SSL_CA` con el certificado PEM. `BACKUP_DIR` permite elegir el destino local; los archivos se escriben con permisos privados y solo se renombran al terminar correctamente.
+
+**Importante para Render:** el disco local de un servicio web gratuito es efímero. No uses `BACKUP_DIR` dentro del contenedor como única copia. Configura un volumen persistente o sincroniza los archivos a almacenamiento externo (por ejemplo, un bucket S3 compatible) y verifica periódicamente una restauración en una base aislada. Esta rama no activa copias automáticas ni sube datos a un proveedor externo: eso requiere elegir y configurar explícitamente el destino y sus credenciales.
+
 ## Configuración
 
 | Variable | Uso |
@@ -153,3 +159,6 @@ se publica en un origen distinto, incluye ese origen en `ALLOWED_ORIGINS`.
 
 Los límites antiabuso se guardan en memoria y son por proceso. Mantén una sola
 instancia hasta configurar un limitador compartido antes de escalar horizontalmente.
+
+El despliegue de Render usa Node.js 24 LTS, igual que CI. Mantén alineada la
+versión de Node en los entornos de desarrollo, integración y producción.
