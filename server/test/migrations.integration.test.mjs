@@ -145,7 +145,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
     freshDatabase.migrate(),
     secondFreshDatabase.migrate(),
   ]);
-  assert.deepEqual(parallelResults.map(({ applied }) => applied).sort(), [0, 12]);
+  assert.deepEqual(parallelResults.map(({ applied }) => applied).sort(), [0, 18]);
   assert.equal((await freshDatabase.migrate()).applied, 0);
   assert.deepEqual(
     await queryDatabase(
