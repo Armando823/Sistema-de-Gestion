@@ -8,7 +8,7 @@
     "build": "npm --prefix frontend run build",
     "dev": "npm --prefix frontend run dev",
     "start": "npm --prefix server start",
-    "test": "node --test test/repairAccess.test.mjs test/csv.test.mjs test/repairValidation.test.mjs test/sharedApiMode.test.mjs server/test/server.test.mjs",
+    "test": "node --test test/repairAccess.test.mjs test/csv.test.mjs test/repairValidation.test.mjs test/sharedApiMode.test.mjs server/test/server.test.mjs server/test/backup.test.mjs",
     "server": "npm --prefix server start"
   }
 }
