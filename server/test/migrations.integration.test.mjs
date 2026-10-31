@@ -262,7 +262,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
     allMigrations.length,
   );
 
-  await executeFiles(databaseNames[2], allMigrations);
+  await executeFiles(databaseNames[2], allMigrations.slice(0, 12));
   await seedRepair(databaseNames[2], "REP-91000002");
   const currentUrl = new URL(connectionString);
   currentUrl.pathname = `/${databaseNames[2]}`;
@@ -273,6 +273,10 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
       ["REP-91000002"],
     );
     await currentSetup.execute(
+      "INSERT INTO accounts (email, password_hash, role, phone) VALUES (?, NULL, 'admin', ?)",
+      ["admin@example.test", "+573001234568"],
+    );
+    await currentSetup.execute(
       "INSERT INTO customer_warranties (customer_key, expires_on, updated_by) VALUES (?, ?, ?)",
       ["email:migration@example.test", "2027-02-28", "admin@example.test"],
     );
@@ -281,7 +285,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   }
 
   const currentDatabase = createTestDatabase(databaseNames[2]);
-  assert.equal((await currentDatabase.migrate()).applied, 12);
+  assert.equal((await currentDatabase.migrate()).applied, 6);
   assert.deepEqual(
     await queryDatabase(
       databaseNames[2],
