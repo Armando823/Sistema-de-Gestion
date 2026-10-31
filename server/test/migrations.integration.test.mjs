@@ -231,7 +231,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
   }
 
   const legacyDatabase = createTestDatabase(databaseNames[1]);
-  await assert.rejects(legacyDatabase.migrate(), /repair_revisions\\.repair_id/);
+  await assert.rejects(legacyDatabase.migrate(), /repair_revisions\.repair_id/);
   const failedHistory = await queryDatabase(
     databaseNames[1],
     "SELECT migration_id FROM schema_migrations ORDER BY migration_id",
