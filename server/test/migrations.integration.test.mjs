@@ -214,7 +214,7 @@ test("las migraciones instalan, adoptan y recuperan esquemas MySQL sin perder da
       databaseNames[0],
       "SELECT COUNT(*) AS tableCount FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()",
     ))[0].tableCount),
-    11,
+    12,
   );
 
   await executeFiles(databaseNames[1], baseMigrations);
