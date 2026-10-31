@@ -12,6 +12,9 @@ function readWebSession() {
 
 async function request(path, options = {}, authenticated = true, allowNotModified = false) {
   const session = readWebSession();
+  if (!apiBase && import.meta.env?.PROD) {
+    console.warn("VITE_API_URL no está configurada; las llamadas a la API fallarán.");
+  }
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
     headers: {
