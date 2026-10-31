@@ -47,7 +47,7 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
           if (inventoryCreated) {
             await cleanup.execute("DELETE FROM inventory WHERE id = ?", [inventoryId]);
           }
-          await cleanup.execute("DELETE FROM inventory_movements WHERE item_id = ?", [inventoryId]);
+          await cleanup.execute("DELETE FROM inventory_movements WHERE item_id = ? OR actor_email = ?", [inventoryId, adminEmail]);
           if (phoneAccountCreated) {
             await cleanup.execute("DELETE FROM phone_login_codes WHERE phone = ?", [phone]);
             await cleanup.execute(
