@@ -1,44 +1,40 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import SignaturePad from "./components/signature/Signaturepad";
+import { useEffect, useRef, useState } from "react";
+import LoginView from "./components/auth/LoginView";
+import AdminView from "./components/admin/AdminView";
+import ClientView from "./components/client/ClientView";
+import { emptyForm, repairStatuses } from "./data/repairData";
 import ConfirmModal from "./components/modals/ConfirmModal";
 import ReceiptModal from "./components/modals/ReceiptModal";
-import { repairStatuses } from "./data/repairData";
-import { loadRepairs, saveRepairs } from "./services/repairStorage";
+import { loadRepairs } from "./services/repairStorage";
 import {
   authenticateClient,
+  authenticateAdmin,
   clearClientSession,
-  readClientSession,
   registerClient,
   saveClientSession,
 } from "./services/accountStorage";
-import { ADMIN_ENABLED, CLIENT_ENABLED } from "./appMode";
-import { toCsv } from "./utils/csv";
-import { readImage } from "./utils/image";
-import { canClientView, repairsOwnedBy } from "./utils/repairAccess";
 import {
-  isValidRepair,
+  createSharedRepair,
+  deleteSharedRepair,
+  nextSharedRepairId,
+  loginSharedPhone,
+  requestSharedPhoneCode,
+  restoreSharedSession,
+  sendSharedRepairCode,
+  readSetting,
+  saveSetting,
+  updateSharedRepair,
+  importSharedRepair,
+  logoutSharedSession,
+} from "./services/dbService";
+import { readImage } from "./utils/image";
+import { createRepairBackup, getBackupRepairs, isValidBackupRepair } from "./utils/repairBackup";
+import { sendReceiptEmail } from "./services/notifyService";
+import {
   isValidImageData,
   repairLimits,
   validateRepairForm,
 } from "./utils/repairValidation";
-import {
-  loadInventory,
-  deleteSetting,
-  readSetting,
-  saveInventory,
-  saveSetting,
-} from "./services/dbService";
-
-const emptyForm = {
-  customer: "",
-  phone: "",
-  device: "",
-  problem: "",
-  photos: [],
-  signature: "",
-  authorizedBy: "",
-  consent: false,
-};
 
 const supportEmail = "soporte@tallerdigital.com";
 
@@ -56,61 +52,6 @@ const defaultSettings = {
   notifyOnStatus: true,
   darkMode: false,
 };
-
-const laptopCatalog = [
-  "HP Pavilion 15",
-  "HP 14",
-  "HP Envy x360",
-  "HP Victus 16",
-  "HP EliteBook 840",
-  "HP ProBook 450",
-  "HP Omen 16",
-  "Lenovo IdeaPad 3",
-  "Lenovo ThinkPad E14",
-  "Lenovo Legion 5",
-  "Lenovo Yoga Slim 7",
-  "Lenovo V15",
-  "Lenovo ThinkBook 15",
-  "Lenovo IdeaPad 5",
-  "Lenovo IdeaPad Flex 5",
-  "Lenovo ThinkPad T14",
-  "Lenovo ThinkPad X1 Carbon",
-  "Lenovo Legion 7",
-  "Lenovo LOQ 15",
-  "Dell Inspiron 15",
-  "Dell Latitude 5420",
-  "Dell XPS 13",
-  "Dell Vostro 15",
-  "Dell G15",
-  "Dell Precision 5560",
-  "Dell Inspiron 14",
-  "Dell Latitude 7440",
-  "Dell XPS 15",
-  "ASUS VivoBook",
-  "ASUS TUF Gaming",
-  "ASUS ZenBook 14",
-  "ASUS ROG Strix G15",
-  "ASUS ExpertBook",
-  "MacBook Air",
-  "MacBook Pro",
-  "MacBook Pro 14",
-  "MacBook Pro 16",
-  "Acer Aspire 5",
-  "Acer Nitro 5",
-  "Acer Swift 3",
-  "Acer Chromebook 315",
-  "MSI Modern 14",
-  "MSI Katana 15",
-  "MSI GF63 Thin",
-  "Samsung Galaxy Book",
-  "Samsung Galaxy Book 3",
-  "Microsoft Surface Laptop",
-  "Microsoft Surface Pro",
-];
-
-function statusClass(status) {
-  return `status-${status.toLowerCase().replaceAll(" ", "-")}`;
-}
 
 function formatTimestamp(timestamp = new Date()) {
   return new Intl.DateTimeFormat("es-CO", {
@@ -135,147 +76,10 @@ function receiptHtml(repair) {
   return `<!doctype html><html lang="es"><head><meta charset="UTF-8"><title>${escapeHtml(repair.id)}</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:40px auto;color:#172a3a}h1{color:#173f3a}dt{font-weight:bold;margin-top:16px}dd{margin:4px 0 0}p{line-height:1.5}.signature{max-width:280px}</style></head><body><p>TALLER DIGITAL</p><h1>Constancia de reparacion ${escapeHtml(repair.id)}</h1><dl><dt>Cliente</dt><dd>${escapeHtml(repair.customer)}</dd><dt>Telefono</dt><dd>${escapeHtml(repair.phone)}</dd><dt>Equipo</dt><dd>${escapeHtml(repair.device)}</dd><dt>Falla reportada</dt><dd>${escapeHtml(repair.problem)}</dd><dt>Estado</dt><dd>${escapeHtml(repair.status)}</dd>${repair.authorizedBy ? `<dt>Recibido por</dt><dd>${escapeHtml(repair.authorizedBy)}</dd>` : ""}</dl><p>El cliente autoriza la revision del equipo y recibe esta constancia del estado reportado.</p>${signatureMarkup}</body></html>`;
 }
 
-function LoginView({ onLogin, onClientLogin, onClientRegister }) {
-  const [clientAccess, setClientAccess] = useState("welcome");
-  const [password, setPassword] = useState("");
-  const [email, setEmail] = useState("");
-  const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [error, setError] = useState("");
-
-  function openClientAccess(access) {
-    setClientAccess(access);
-    setEmail("");
-    setPassword("");
-    setPasswordConfirmation("");
-    setError("");
-  }
-
-  async function submitClient(event) {
-    event.preventDefault();
-    try {
-      const result = await onClientLogin(email, password);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      setError("");
-    } catch {
-      setError("No se pudo iniciar sesión. Inténtalo de nuevo.");
-    }
-  }
-
-  async function submitRegistration(event) {
-    event.preventDefault();
-    if (password !== passwordConfirmation) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
-    try {
-      const result = await onClientRegister(email, password);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      setPassword("");
-      setPasswordConfirmation("");
-      setError("Cuenta creada. Ahora puedes iniciar sesión.");
-      setClientAccess("login");
-    } catch {
-      setError("No se pudo crear la cuenta. Inténtalo de nuevo.");
-    }
-  }
-
-  return (
-    <main className="login-view login-client">
-      <section className="login-card">
-        <div className="login-brand">
-          <span className="sidebar-mark">MC</span>
-          <div>
-            <p className="eyebrow">TALLER DIGITAL</p>
-            <h1>Control de reparaciones</h1>
-          </div>
-        </div>
-        <div className="login-heading">
-          <p className="eyebrow">ACCESO PÚBLICO</p>
-          <h2>Consulta tu reparación</h2>
-          <p>Crea una cuenta para consultar y gestionar tus reparaciones.</p>
-        </div>
-        {clientAccess === "welcome" ? (
-          <div className="public-access">
-            <button type="button" className="primary-button" onClick={() => openClientAccess("login")}>
-              Iniciar sesión como cliente
-            </button>
-            <button type="button" className="secondary-button" onClick={() => openClientAccess("register")}>
-              Crear cuenta de cliente
-            </button>
-            <p>Necesitas una cuenta para crear y consultar tus reparaciones.</p>
-            {ADMIN_ENABLED && CLIENT_ENABLED && (
-              <button type="button" className="private-access" onClick={() => onLogin("admin")}>
-                Entrar al panel administrativo
-              </button>
-            )}
-          </div>
-        ) : (
-          <form className="login-form" onSubmit={clientAccess === "register" ? submitRegistration : submitClient}>
-            <label>
-              Correo electrónico
-              <input
-                required
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="cliente@correo.com"
-              />
-            </label>
-            <label>
-              Contraseña
-              <input
-                required
-                type="password"
-                minLength={8}
-                maxLength={200}
-                autoComplete={clientAccess === "register" ? "new-password" : "current-password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Mínimo 8 caracteres"
-              />
-            </label>
-            {clientAccess === "register" && (
-              <label>
-                Confirmar contraseña
-                <input
-                  required
-                  type="password"
-                  minLength={8}
-                  maxLength={200}
-                  autoComplete="new-password"
-                  value={passwordConfirmation}
-                  onChange={(event) => setPasswordConfirmation(event.target.value)}
-                  placeholder="Repite tu contraseña"
-                />
-              </label>
-            )}
-            {error && <p className="form-error" role="alert">{error}</p>}
-            <button type="submit" className="primary-button">
-              {clientAccess === "register" ? "Crear cuenta" : "Entrar como cliente"}
-            </button>
-            <button type="button" className="private-access" onClick={() => openClientAccess("welcome")}>
-              Volver
-            </button>
-          </form>
-        )}
-        <p className="login-note">
-          Usa tu cuenta personal para consultar tus reparaciones.
-        </p>
-      </section>
-    </main>
-  );
-}
-
-function App({ version = "Final" }) {
+function App({ version = "2.4" }) {
   const [repairs, setRepairs] = useState([]);
   const [clientEmail, setClientEmail] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
   const [role, setRole] = useState(null);
   const [dataReady, setDataReady] = useState(false);
   const [repairsReady, setRepairsReady] = useState(false);
@@ -283,38 +87,18 @@ function App({ version = "Final" }) {
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [settings, setSettings] = useState(defaultSettings);
+  const repairsRef = useRef(repairs);
+  const noticeRef = useRef(notice);
   const [clientForm, setClientForm] = useState(emptyForm);
   const [clientFormError, setClientFormError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [receipt, setReceipt] = useState(null);
   const importInputRef = useRef(null);
+  repairsRef.current = repairs;
+  noticeRef.current = notice;
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([
-      loadRepairs(),
-      readClientSession(),
-      readSetting("workshop-settings", {}),
-    ]).then(([repairsResult, sessionResult, settingsResult]) => {
-      if (cancelled) return;
-      const savedRepairs = repairsResult.status === "fulfilled" ? repairsResult.value : [];
-      const sessionEmail = sessionResult.status === "fulfilled" ? sessionResult.value : "";
-      const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
-      setSettingsReady(settingsResult.status === "fulfilled");
-      setRepairs(savedRepairs);
-      setRepairsReady(repairsResult.status === "fulfilled");
-      if (repairsResult.status === "rejected") {
-        setNotice("No se pudieron cargar las órdenes. No se guardarán cambios para proteger los datos existentes.");
-      } else if (settingsResult.status === "rejected") {
-        setNotice("No se pudieron cargar los ajustes. No se guardarán valores predeterminados sobre los datos existentes.");
-      }
-      setClientEmail(sessionEmail);
-      setRole(
-        ADMIN_ENABLED && !CLIENT_ENABLED
-          ? "admin"
-          : sessionEmail && CLIENT_ENABLED
-            ? "client"
-            : null,
-      );
+    function applySettings(savedSettings = {}) {
       setSettings({
         ...defaultSettings,
         ...savedSettings,
@@ -322,16 +106,50 @@ function App({ version = "Final" }) {
           ? defaultSettings.currency
           : savedSettings.currency || defaultSettings.currency,
       });
+    }
+    async function loadAccount(account) {
+      const [repairsResult, settingsResult] = await Promise.allSettled([
+        loadRepairs(),
+        readSetting("workshop-settings", {}),
+      ]);
+      if (cancelled) return;
+      const savedRepairs = repairsResult.status === "fulfilled" ? repairsResult.value : [];
+      const savedSettings = settingsResult.status === "fulfilled" ? settingsResult.value : {};
+      setRepairs(savedRepairs);
+      setRepairsReady(repairsResult.status === "fulfilled");
+      setSettingsReady(settingsResult.status === "fulfilled");
+      if (repairsResult.status === "rejected") {
+        setNotice("No se pudieron cargar las órdenes compartidas.");
+      } else if (settingsResult.status === "rejected") {
+        setNotice("No se pudieron cargar los ajustes del taller.");
+      }
+      setClientEmail(account.email);
+      setClientPhone(account.phone || "");
+      setRole(account.role);
+      applySettings(savedSettings);
       setDataReady(true);
-    }).catch(() => {
+    }
+    async function initialize() {
+      const account = await restoreSharedSession();
+      if (account) {
+        await loadAccount(account);
+      } else if (!cancelled) {
+        setRepairs([]);
+        setRepairsReady(true);
+        setSettingsReady(true);
+        setDataReady(true);
+      }
+    }
+    initialize().catch(() => {
       if (cancelled) return;
       setRepairs([]);
       setRepairsReady(false);
       setSettingsReady(false);
       setClientEmail("");
+      setClientPhone("");
       setRole(null);
       setSettings(defaultSettings);
-      setNotice("No se pudo cargar la base de datos local.");
+      setNotice("No se pudo conectar con el servidor.");
       setDataReady(true);
     });
     return () => {
@@ -339,11 +157,61 @@ function App({ version = "Final" }) {
     };
   }, []);
   useEffect(() => {
-    if (!dataReady || !repairsReady) return;
-    saveRepairs(repairs).then((saved) => {
-      if (!saved) setNotice("No se pudieron guardar los cambios en la base de datos local.");
-    }).catch(() => setNotice("No se pudieron guardar los cambios en la base de datos local."));
-  }, [dataReady, repairsReady, repairs]);
+    if (!role || !dataReady || !repairsReady) return undefined;
+    let active = true;
+    let requestInProgress = false;
+    let syncFailed = false;
+
+    async function refreshRepairs() {
+      if (!active || requestInProgress || document.visibilityState !== "visible") return;
+      requestInProgress = true;
+      const previousRepairs = repairsRef.current;
+      try {
+        const latestRepairs = await loadRepairs();
+        if (!active || repairsRef.current !== previousRepairs) return;
+        if (latestRepairs !== previousRepairs &&
+            JSON.stringify(latestRepairs) !== JSON.stringify(previousRepairs)) {
+          setRepairs(latestRepairs);
+        }
+        syncFailed = false;
+        if (noticeRef.current === "No se pudieron sincronizar las órdenes. Comprueba tu conexión.") {
+          setNotice("");
+        }
+      } catch {
+        if (active && !syncFailed) {
+          syncFailed = true;
+          setNotice("No se pudieron sincronizar las órdenes. Comprueba tu conexión.");
+        }
+      } finally {
+        requestInProgress = false;
+      }
+    }
+
+    refreshRepairs();
+    const intervalId = window.setInterval(refreshRepairs, 3_000);
+    document.addEventListener("visibilitychange", refreshRepairs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshRepairs);
+    };
+  }, [dataReady, repairsReady, role]);
+  useEffect(() => {
+    if (dataReady && settingsReady && role === "admin") {
+      saveSetting("workshop-settings", settings).then((saved) => {
+        if (!saved) setNotice("No se pudieron guardar los ajustes del taller.");
+      }).catch((error) => setNotice(error.message || "No se pudieron guardar los ajustes del taller."));
+    }
+  }, [dataReady, settingsReady, settings, role]);
+  // El correo se propone en el formulario; no usar la identidad sintética por teléfono.
+  useEffect(() => {
+    if (!clientEmail || clientPhone) return;
+    setClientForm((form) => (form.contactEmail ? form : { ...form, contactEmail: clientEmail }));
+  }, [clientEmail, clientPhone]);
+  useEffect(() => {
+    if (!clientPhone) return;
+    setClientForm((form) => (form.phone ? form : { ...form, phone: clientPhone }));
+  }, [clientPhone]);
   const filteredRepairs = repairs.filter((repair) =>
     [repair.id, repair.customer, repair.device].some((value) =>
       value.toLowerCase().includes(search.toLowerCase()),
@@ -351,56 +219,83 @@ function App({ version = "Final" }) {
   );
 
   if (!dataReady) return null;
-  if (!repairsReady) {
-    return (
-      <main className="login-view login-client">
-        <section className="login-card">
-          <div className="login-heading">
-            <p className="eyebrow">DATOS LOCALES</p>
-            <h2>No se pudieron cargar las órdenes</h2>
-            <p role="alert">{notice || "No se modificaron los datos existentes."}</p>
-          </div>
-          <button type="button" className="primary-button" onClick={() => window.location.reload()}>
-            Volver a intentar
-          </button>
-        </section>
-      </main>
+
+  async function createRepair(formData, clearForm, clearError, noticeMessage) {
+    const timestamp = new Date().toISOString();
+    let id;
+    try {
+      id = await nextSharedRepairId();
+    } catch (error) {
+      setNotice(error.message || "No se pudo reservar un código de reparación.");
+      return;
+    }
+    const newRepair = {
+      ...formData,
+      id,
+      status: "Recibido",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      updated: formatTimestamp(timestamp),
+    };
+    let savedRepair;
+    try {
+      savedRepair = await createSharedRepair(newRepair);
+    } catch (error) {
+      setNotice(`${id}: ${error.message || "no se pudo guardar la orden."}`);
+      return;
+    }
+    setRepairs((current) => [savedRepair, ...current.filter((repair) => repair.id !== id)]);
+    clearForm();
+    clearError();
+    if (newRepair.contactEmail) await emailReceipt(newRepair, noticeMessage);
+    if (clientPhone && !isAdmin) {
+      setNotice(`${id} quedó guardada. Enviando el código por WhatsApp...`);
+      try {
+        await sendSharedRepairCode(id);
+        setNotice(`${id} quedó guardada y enviamos el código a tu WhatsApp.`);
+      } catch (error) {
+        setNotice(`${id} quedó guardada, pero no se pudo enviar el código por WhatsApp: ${error.message}`);
+      }
+    } else if (!newRepair.contactEmail) {
+      setNotice(`${id} ${noticeMessage}`);
+    }
+  }
+
+  // Envía (o reenvía) la constancia al correo del cliente. No bloquea la
+  // creación de la orden: si el correo falla, la orden ya quedó guardada y
+  // se puede reenviar desde la constancia.
+  async function emailReceipt(repair, noticeMessage = "") {
+    const email = repair.contactEmail;
+    if (!email) {
+      setNotice(`${repair.id} no tiene un correo registrado.`);
+      return;
+    }
+    const prefix = noticeMessage ? `${repair.id} ${noticeMessage}. ` : "";
+    setNotice(`${prefix}Enviando la constancia a ${email}...`);
+    const result = await sendReceiptEmail(repair, email);
+    setNotice(
+      result.ok
+        ? `${prefix}Constancia enviada a ${email}.`
+        : `${prefix}No se pudo enviar la constancia a ${email}: ${result.message} La orden quedó guardada y podrás reenviar la constancia más tarde.`,
     );
   }
 
-  function createRepair(formData, clearForm, clearError, noticeMessage) {
-    const timestamp = new Date().toISOString();
-    const id = `REP-${
-      Math.max(
-        ...repairs.map(
-          (repair) => Number(repair.id.replace("REP-", "")) || 1000,
-        ),
-        1000,
-      ) + 1
-    }`;
-    setRepairs([
-      {
-        ...formData,
-        id,
-        status: "Recibido",
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        updated: formatTimestamp(timestamp),
-      },
-      ...repairs,
-    ]);
-    clearForm();
-    clearError();
-    setNotice(`${id} ${noticeMessage}`);
-  }
-
-  function addClientRepair(event) {
+  async function addClientRepair(event) {
     event.preventDefault();
-    const validationError = validateRepairForm(clientForm);
+    const validationError = validateRepairForm(clientForm, {
+      requireEmail: !clientPhone,
+      requireWhatsAppConsent: Boolean(clientPhone),
+    });
     if (validationError) return setClientFormError(validationError);
-    createRepair(
-      { ...clientForm, ownerEmail: clientEmail },
-      () => setClientForm(emptyForm),
+    await createRepair(
+      {
+        ...clientForm,
+        phone: clientPhone || clientForm.phone,
+        contactEmail: clientForm.contactEmail.trim(),
+        ownerEmail: clientEmail,
+        whatsappOptIn: Boolean(clientPhone && clientForm.whatsappOptIn === true),
+      },
+      () => setClientForm({ ...emptyForm, phone: clientPhone, contactEmail: clientPhone ? "" : clientEmail }),
       () => setClientFormError(""),
       "enviada al taller",
     );
@@ -417,23 +312,34 @@ function App({ version = "Final" }) {
     setConfirmation({ type: "delete", id });
   }
 
-  function confirmAction() {
+  async function confirmAction() {
     if (confirmation?.type === "status") {
-      setRepairs((current) =>
-        current.map((repair) =>
-          repair.id === confirmation.id
-            ? {
-                ...repair,
-                status: confirmation.status,
-                updatedAt: new Date().toISOString(),
-                updated: formatTimestamp(),
-              }
-            : repair,
-        ),
-      );
-      setNotice(`${confirmation.id} actualizada`);
+      const current = repairs.find((repair) => repair.id === confirmation.id);
+      if (!current) {
+        setNotice("No se encontró la orden que intentas actualizar. Actualiza la lista.");
+        setConfirmation(null);
+        return;
+      }
+      try {
+        const savedRepair = await updateSharedRepair(
+          confirmation.id,
+          current.version,
+          { status: confirmation.status },
+        );
+        setRepairs((items) => items.map((repair) => repair.id === savedRepair.id ? savedRepair : repair));
+        setNotice(`${confirmation.id} actualizada`);
+      } catch (error) {
+        setNotice(error.message || "No se pudo actualizar el estado de la orden.");
+      }
     }
     if (confirmation?.type === "delete") {
+      try {
+        await deleteSharedRepair(confirmation.id);
+      } catch (error) {
+        setNotice(error.message || "No se pudo eliminar la orden.");
+        setConfirmation(null);
+        return;
+      }
       setRepairs((current) =>
         current.filter((repair) => repair.id !== confirmation.id),
       );
@@ -456,7 +362,7 @@ function App({ version = "Final" }) {
 
   function printReceipt(repair) {
     // Con "noopener" window.open devuelve null y la impresión nunca se abría;
-    // se imprime desde un iframe oculto, que funciona igual en navegador y Electron.
+    // se imprime desde un iframe oculto dentro del navegador.
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
     frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
@@ -474,7 +380,8 @@ function App({ version = "Final" }) {
   }
 
   function exportRepairs() {
-    const blob = new Blob([JSON.stringify(repairs, null, 2)], {
+    const backup = createRepairBackup(repairs);
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
       type: "application/json;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
@@ -483,7 +390,7 @@ function App({ version = "Final" }) {
     link.download = `ordenes-reparacion-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice("Copia de órdenes descargada");
+    setNotice("Respaldo completo descargado. Incluye datos personales, fotos y firmas; guárdalo de forma segura.");
   }
 
   async function importRepairs(event) {
@@ -496,31 +403,40 @@ function App({ version = "Final" }) {
     }
     try {
       const importedData = JSON.parse(await file.text());
-      const importedRepairs = Array.isArray(importedData)
-        ? importedData
-        : importedData?.repairs;
-      const validRepairs = Array.isArray(importedRepairs)
-        ? importedRepairs.filter(isValidRepair)
-        : [];
-      if (validRepairs.length === 0) {
-        setNotice("El archivo no contiene órdenes válidas");
+      const importedRepairs = getBackupRepairs(importedData);
+      if (!importedRepairs) {
+        setNotice("El formato del respaldo no es compatible.");
         return;
       }
-      // Se agregan solo las órdenes nuevas; las que ya existen no se pisan,
-      // así importar una copia nunca borra el trabajo actual.
+      let invalid = 0;
+      let duplicates = 0;
+      let failed = 0;
       const knownIds = new Set(repairs.map((repair) => repair.id));
       const added = [];
-      for (const repair of validRepairs) {
-        if (!knownIds.has(repair.id)) {
-          knownIds.add(repair.id);
-          added.push(repair);
+      for (const repair of importedRepairs) {
+        if (!isValidBackupRepair(repair)) {
+          invalid += 1;
+          continue;
+        }
+        if (knownIds.has(repair.id)) {
+          duplicates += 1;
+          continue;
+        }
+        knownIds.add(repair.id);
+        try {
+          added.push(await importSharedRepair(repair));
+        } catch (error) {
+          if (error.status === 409) duplicates += 1;
+          else if (error.status === 422) invalid += 1;
+          else failed += 1;
         }
       }
-      setRepairs([...added, ...repairs]);
+      setRepairs((current) => {
+        const currentIds = new Set(current.map(({ id }) => id));
+        return [...added.filter(({ id }) => !currentIds.has(id)), ...current];
+      });
       setSearch("");
-      setNotice(
-        `${added.length} orden(es) agregada(s), ${validRepairs.length - added.length} ya existían`,
-      );
+      setNotice(`${added.length} agregada(s), ${duplicates} duplicada(s), ${invalid} inválida(s), ${failed} fallida(s).`);
     } catch {
       setNotice("No se pudo leer el archivo de órdenes");
     } finally {
@@ -537,11 +453,10 @@ function App({ version = "Final" }) {
     }
     try {
       const photos = await Promise.all(selectedFiles.map((file) => readImage(file)));
-      setRepairs((current) =>
-        current.map((repair) =>
-          repair.id === id ? { ...repair, photos, updated: "Ahora" } : repair,
-        ),
-      );
+      const current = repairsRef.current.find((repair) => repair.id === id);
+      if (!current) throw new Error("No se encontró la orden. Actualiza la lista e inténtalo de nuevo.");
+      const savedRepair = await updateSharedRepair(id, current.version, { photos });
+      setRepairs((items) => items.map((repair) => repair.id === id ? savedRepair : repair));
       setNotice(`${id}: fotos actualizadas`);
     } catch (error) {
       setNotice(error.message);
@@ -552,13 +467,82 @@ function App({ version = "Final" }) {
   async function handleClientLogin(email, password) {
     const result = await authenticateClient(email, password);
     if (result.account) {
+      setClientEmail(result.account.email);
+      setClientPhone(result.account.phone || "");
       if (!await saveClientSession(result.account.email)) {
         return { error: "No se pudo guardar la sesión. Inténtalo de nuevo." };
       }
-      setClientEmail(result.account.email);
-      setRole("client");
+      try {
+        const [savedRepairs, savedSettings] = await Promise.all([
+          loadRepairs(),
+          readSetting("workshop-settings", {}),
+        ]);
+        setRepairs(savedRepairs);
+        setRepairsReady(true);
+        setSettingsReady(true);
+        setSettings({ ...defaultSettings, ...savedSettings });
+      } catch (error) {
+        return { error: error.message || "No se pudieron cargar los datos del servidor." };
+      }
+      setRole(result.account.role || "client");
     }
     return result;
+  }
+
+  async function handlePhoneCodeRequest(phone) {
+    try {
+      await requestSharedPhoneCode(phone);
+      return {};
+    } catch (error) {
+      return { error: error.message || "No se pudo enviar el código por WhatsApp." };
+    }
+  }
+
+  async function handlePhoneLogin(phone, code) {
+    try {
+      const account = await loginSharedPhone(phone, code);
+      if (!account || account.role !== "client") {
+        await clearClientSession();
+        return { error: "Esta cuenta no puede ingresar desde el acceso de cliente." };
+      }
+      const [savedRepairs, savedSettings] = await Promise.all([
+        loadRepairs(),
+        readSetting("workshop-settings", {}),
+      ]);
+      setRepairs(savedRepairs);
+      setRepairsReady(true);
+      setSettingsReady(true);
+      setSettings({ ...defaultSettings, ...savedSettings });
+      setClientEmail(account.email);
+      setClientPhone(account.phone || phone);
+      setRole("client");
+      return {};
+    } catch (error) {
+      await clearClientSession();
+      return { error: error.message || "No se pudo iniciar sesión." };
+    }
+  }
+
+  async function handleAdminLogin(email, password) {
+    const result = await authenticateAdmin(email, password);
+    if (!result.account) return result;
+    try {
+      const [savedRepairs, savedSettings] = await Promise.all([
+        loadRepairs(),
+        readSetting("workshop-settings", {}),
+      ]);
+      setRepairs(savedRepairs);
+      setRepairsReady(true);
+      setSettingsReady(true);
+      setSettings({ ...defaultSettings, ...savedSettings });
+      setClientEmail(result.account.email);
+      setClientPhone("");
+      setRole("admin");
+      return result;
+    } catch (error) {
+      await clearClientSession();
+      return { error: error.message || "No se pudieron cargar los datos compartidos." };
+    }
   }
 
   function handleClientRegister(email, password) {
@@ -568,19 +552,22 @@ function App({ version = "Final" }) {
   if (!role) {
     return (
       <LoginView
-        onLogin={setRole}
         onClientLogin={handleClientLogin}
         onClientRegister={handleClientRegister}
+        onAdminLogin={handleAdminLogin}
+        onPhoneLogin={handlePhoneLogin}
+        onPhoneCodeRequest={handlePhoneCodeRequest}
       />
     );
   }
 
   const isAdmin = role === "admin";
 
-  function logout() {
-    if (ADMIN_ENABLED && !CLIENT_ENABLED) return;
+  async function logout() {
+    await logoutSharedSession();
     setRole(null);
     setClientEmail("");
+    setClientPhone("");
     clearClientSession();
     setSearch("");
     setClientForm(emptyForm);
@@ -631,8 +618,8 @@ function App({ version = "Final" }) {
         )}
         {!isAdmin && (
           <div className="client-topbar-actions">
-            <span className="client-role" title={clientEmail}>
-              {clientEmail}
+            <span className="client-role" title={clientPhone || clientEmail}>
+              {clientPhone || clientEmail}
             </span>
             <a
               className="support-button"
@@ -670,8 +657,6 @@ function App({ version = "Final" }) {
                 onChange={importRepairs}
               />
             </label>
-            <span className="admin-profile"><b>AD</b> Admin</span>
-            {CLIENT_ENABLED && <button type="button" className="text-button" onClick={logout}>Cerrar sesión</button>}
           </div>
         )}
       </header>
@@ -689,7 +674,7 @@ function App({ version = "Final" }) {
           repairs={repairs}
           settings={settings}
           setSettings={setSettings}
-          settingsReady={settingsReady}
+          onNotice={setNotice}
           filteredRepairs={filteredRepairs}
           onLogout={logout}
           updateStatus={requestStatusChange}
@@ -701,11 +686,23 @@ function App({ version = "Final" }) {
         <ClientView
           repairs={repairs}
           clientEmail={clientEmail}
+          clientPhone={clientPhone}
+          requireWhatsAppConsent={Boolean(clientPhone)}
           form={clientForm}
           setForm={setClientForm}
           formError={clientFormError}
           clearFormError={() => setClientFormError("")}
           addRepair={addClientRepair}
+          emptyValues={{ ...emptyForm, phone: clientPhone, contactEmail: clientPhone ? "" : clientEmail }}
+          onEmail={clientPhone ? undefined : emailReceipt}
+          onWhatsApp={async (repair) => {
+            try {
+              await sendSharedRepairCode(repair.id);
+              setNotice(`Enviamos el código de ${repair.id} por WhatsApp.`);
+            } catch (error) {
+              setNotice(`No se pudo reenviar el código de ${repair.id}: ${error.message}`);
+            }
+          }}
         />
       )}
       {confirmation && (
@@ -730,1131 +727,9 @@ function App({ version = "Final" }) {
         onClose={() => setReceipt(null)}
         onPrint={printReceipt}
         onDownload={downloadReceipt}
+        onEmail={emailReceipt}
       />
     </div>
-  );
-}
-
-function AdminView({
-  version,
-  search,
-  setSearch,
-  repairs,
-  filteredRepairs,
-  onLogout,
-  updateStatus,
-  updatePhotos,
-  requestDelete,
-  openReceipt,
-  settings,
-  setSettings,
-  settingsReady,
-}) {
-  const ordersSectionRef = useRef(null);
-  const [activeSection, setActiveSection] = useState("dashboard");
-  const [companyLogo, setCompanyLogo] = useState("");
-  const [logoReady, setLogoReady] = useState(false);
-  const [logoError, setLogoError] = useState("");
-  useEffect(() => {
-    readSetting("workshop-logo", "").then((savedLogo) => {
-      setCompanyLogo(savedLogo || "");
-      setLogoReady(true);
-    }).catch(() => {
-      setLogoError("No se pudo cargar el logo; no se sobrescribirán los datos existentes.");
-    });
-  }, []);
-  useEffect(() => {
-    if (!logoReady) return;
-    const save = companyLogo ? saveSetting("workshop-logo", companyLogo) : deleteSetting("workshop-logo");
-    save.then((saved) => {
-      if (!saved) setLogoError("No se pudieron guardar los cambios del logo.");
-      else setLogoError("");
-    }).catch(() => setLogoError("No se pudieron guardar los cambios del logo."));
-  }, [companyLogo, logoReady]);
-  const [inventoryData, setInventoryData] = useState([]);
-  const [inventoryReady, setInventoryReady] = useState(false);
-  const [inventoryError, setInventoryError] = useState("");
-  useEffect(() => {
-    loadInventory().then((savedInventory) => {
-      if (!Array.isArray(savedInventory)) throw new Error("La lista de inventario no es válida.");
-      setInventoryData(savedInventory);
-      setInventoryReady(true);
-    }).catch(() => {
-      setInventoryError("No se pudo cargar el inventario. No se sobrescribirán los datos existentes.");
-    });
-  }, []);
-  useEffect(() => {
-    if (!inventoryReady) return;
-    saveInventory(inventoryData).then((saved) => {
-      if (!saved) setInventoryError("No se pudieron guardar los cambios de inventario.");
-      else setInventoryError("");
-    }).catch(() => setInventoryError("No se pudieron guardar los cambios de inventario."));
-  }, [inventoryData, inventoryReady]);
-  const [inventorySearch, setInventorySearch] = useState("");
-  const [inventoryFilter, setInventoryFilter] = useState("Todos");
-  const [editingInventoryId, setEditingInventoryId] = useState(null);
-  const [inventoryForm, setInventoryForm] = useState({
-    item: "",
-    sku: "",
-    category: "",
-    stock: "",
-    minimum: "",
-    cost: "",
-    supplier: "",
-  });
-  const [warranties, setWarranties] = useState({});
-  const [warrantiesReady, setWarrantiesReady] = useState(false);
-  const [warrantyError, setWarrantyError] = useState("");
-  useEffect(() => {
-    readSetting("workshop-warranties", {}).then((saved) => {
-      if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
-        throw new Error("Los datos de garantías no tienen un formato válido.");
-      }
-      setWarranties(saved);
-      setWarrantiesReady(true);
-    }).catch(() => setWarrantyError("No se pudieron cargar las garantías; los cambios están desactivados para proteger los datos."));
-  }, []);
-  useEffect(() => {
-    if (!warrantiesReady) return;
-    saveSetting("workshop-warranties", warranties).then((saved) => {
-      if (!saved) setWarrantyError("No se pudieron guardar los cambios de garantía.");
-      else setWarrantyError("");
-    }).catch(() => setWarrantyError("No se pudieron guardar los cambios de garantía."));
-  }, [warranties, warrantiesReady]);
-  const clientsData = useMemo(() => {
-    const clients = new Map();
-    for (const repair of repairs) {
-      const email = repair.ownerEmail?.trim().toLowerCase() || "";
-      const phoneKey = String(repair.phone || "").replace(/\D/g, "");
-      const key = email || `phone:${phoneKey || repair.id}`;
-      const existing = clients.get(key);
-      const updatedTime = repair.createdAt ? Date.parse(repair.createdAt) : 0;
-      if (!existing) {
-        clients.set(key, {
-          id: key,
-          name: repair.customer,
-          email: email || "Sin cuenta asociada",
-          phone: repair.phone,
-          device: repair.device,
-          lastService: repair.updated,
-          lastServiceTime: updatedTime,
-          tickets: repair.status === "Entregado" ? 0 : 1,
-          warrantyUntil: warranties[key] || null,
-        });
-      } else {
-        existing.tickets += repair.status === "Entregado" ? 0 : 1;
-        if (updatedTime >= existing.lastServiceTime) {
-          existing.name = repair.customer;
-          existing.phone = repair.phone;
-          existing.device = repair.device;
-          existing.lastService = repair.updated;
-          existing.lastServiceTime = updatedTime;
-        }
-      }
-    }
-    return Array.from(clients.values());
-  }, [repairs, warranties]);
-  const [clientSearch, setClientSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState("Todos");
-  const [reportPeriod, setReportPeriod] = useState("all");
-  const [settingsSaved, setSettingsSaved] = useState(false);
-
-  function showOrders() {
-    setActiveSection("orders");
-    ordersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function showDashboard() {
-    setActiveSection("dashboard");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function showInventory() {
-    setActiveSection("inventory");
-  }
-
-  function showClients() {
-    setActiveSection("clients");
-  }
-
-  function showReports() {
-    setActiveSection("reports");
-  }
-
-  function showSettings() {
-    setActiveSection("settings");
-  }
-
-  async function updateCompanyLogo(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      setCompanyLogo(await readImage(file, 500));
-      setLogoError("");
-    } catch (error) {
-      setLogoError(error.message);
-    }
-    event.target.value = "";
-  }
-
-  function warrantyState(date) {
-    if (!date) return "Sin garantía";
-    const expiry = new Date(`${date}T23:59:59`);
-    if (Number.isNaN(expiry.getTime())) return "Sin garantía";
-    const days = Math.ceil((expiry - new Date()) / 86400000);
-    if (days < 0) return "Vencida";
-    if (days <= 30) return "Por vencer";
-    return "Vigente";
-  }
-
-  function warrantyLabel(date) {
-    if (!date) return "Sin cobertura";
-    const parsed = new Date(`${date}T12:00:00`);
-    if (Number.isNaN(parsed.getTime())) return "Sin cobertura";
-    return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium" }).format(parsed);
-  }
-
-  function openClientOrders(client) {
-    setSearch(client.name);
-    setActiveSection("orders");
-  }
-
-  function extendClientWarranty(client) {
-    if (!warrantiesReady) return;
-    const existing = client.warrantyUntil ? new Date(`${client.warrantyUntil}T12:00:00`) : null;
-    const baseline = existing && existing > new Date() ? existing : new Date();
-    baseline.setFullYear(baseline.getFullYear() + 1);
-    const expires = [
-      baseline.getFullYear(),
-      String(baseline.getMonth() + 1).padStart(2, "0"),
-      String(baseline.getDate()).padStart(2, "0"),
-    ].join("-");
-    setWarranties((current) => ({ ...current, [client.id]: expires }));
-  }
-
-  function removeClientWarranty(client) {
-    if (!warrantiesReady) return;
-    setWarranties((current) => {
-      const next = { ...current };
-      delete next[client.id];
-      return next;
-    });
-  }
-
-  const filteredClients = clientsData.filter((client) => {
-    const status = warrantyState(client.warrantyUntil);
-    const matchesSearch = [client.name, client.email, client.phone, client.device]
-      .some((value) => value.toLowerCase().includes(clientSearch.toLowerCase()));
-    return matchesSearch && (clientFilter === "Todos" || status === clientFilter);
-  });
-  const clientWarrantyCounts = ["Vigente", "Por vencer", "Vencida", "Sin garantía"].map((status) => ({
-    status,
-    total: clientsData.filter((client) => warrantyState(client.warrantyUntil) === status).length,
-  }));
-  const reportRepairs = reportPeriod === "all"
-    ? repairs
-    : repairs.filter((repair) => repair.createdAt && new Date(repair.createdAt) >= new Date(Date.now() - Number(reportPeriod) * 86400000));
-  const reportStatusTotals = repairStatuses.map((status) => ({
-    status,
-    total: reportRepairs.filter((repair) => repair.status === status).length,
-  }));
-  const reportMaxStatusTotal = Math.max(...reportStatusTotals.map((item) => item.total), 1);
-  const deliveredCount = reportRepairs.filter((repair) => repair.status === "Entregado").length;
-  const activeCount = reportRepairs.length - deliveredCount;
-  const completionRate = reportRepairs.length ? Math.round((deliveredCount / reportRepairs.length) * 100) : 0;
-
-  function exportReport() {
-    const rows = [
-      ["Orden", "Cliente", "Equipo", "Estado", "Actualización"],
-      ...reportRepairs.map((repair) => [repair.id, repair.customer, repair.device, repair.status, repair.updated]),
-    ];
-    const csv = toCsv(rows);
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    link.download = `reporte-reparaciones-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-  }
-
-  const statusTotals = repairStatuses.map((status) => ({
-    status,
-    total: repairs.filter((repair) => repair.status === status).length,
-  }));
-  const maxStatusTotal = Math.max(...statusTotals.map((item) => item.total), 1);
-  const currencyPrefix = settings.currency.startsWith("PEN")
-    ? "S/ "
-    : settings.currency.startsWith("USD")
-    ? "US$"
-    : settings.currency.startsWith("MXN")
-      ? "MX$"
-      : "$";
-  function inventoryLevel(stock) {
-    if (stock === 0) return "Agotado";
-    if (stock < 4) return "Crítico";
-    if (stock < 8) return "Bajo";
-    return "Adecuado";
-  }
-  function resetInventoryForm() {
-    setEditingInventoryId(null);
-    setInventoryForm({ item: "", sku: "", category: "", stock: "", minimum: "", cost: "", supplier: "" });
-  }
-  function saveInventoryItem(event) {
-    event.preventDefault();
-    const item = {
-      ...inventoryForm,
-      item: inventoryForm.item.trim(),
-      sku: inventoryForm.sku.trim().toUpperCase(),
-      category: inventoryForm.category.trim(),
-      supplier: inventoryForm.supplier.trim(),
-      stock: Math.max(Number(inventoryForm.stock) || 0, 0),
-      minimum: Math.max(Number(inventoryForm.minimum) || 0, 0),
-      cost: Math.max(Number(inventoryForm.cost) || 0, 0),
-    };
-    if (!item.item || !item.sku || !item.category || !item.supplier) return;
-    setInventoryData((current) => editingInventoryId
-      ? current.map((entry) => entry.id === editingInventoryId ? { ...entry, ...item } : entry)
-      : [...current, { id: Date.now(), ...item }]);
-    resetInventoryForm();
-  }
-  function editInventoryItem(item) {
-    setEditingInventoryId(item.id);
-    setInventoryForm({ ...item, stock: String(item.stock), minimum: String(item.minimum), cost: String(item.cost) });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-  function removeInventoryItem(id) {
-    setInventoryData((current) => current.filter((item) => item.id !== id));
-    if (editingInventoryId === id) resetInventoryForm();
-  }
-  const inventoryLevels = ["Todos", "Agotado", "Crítico", "Bajo", "Adecuado"];
-  const filteredInventory = inventoryData.filter((item) => {
-    const matchesSearch = [item.item, item.sku, item.category, item.supplier]
-      .some((value) => value.toLowerCase().includes(inventorySearch.toLowerCase()));
-    const matchesFilter = inventoryFilter === "Todos" || inventoryLevel(item.stock) === inventoryFilter;
-    return matchesSearch && matchesFilter;
-  });
-  const lowStockCount = inventoryData.filter((item) => inventoryLevel(item.stock) !== "Adecuado").length;
-  const inventoryValue = inventoryData.reduce((total, item) => total + item.stock * item.cost, 0);
-
-  return (
-    <div className={`admin-layout ${settings.darkMode ? "admin-dark" : ""}`}>
-      <aside className="admin-sidebar" aria-label="Navegación administrativa">
-        <div className="sidebar-mark">MC</div>
-        <label className="company-logo-upload company-logo-hero" title="Cargar logo de empresa">
-          {companyLogo ? <img src={companyLogo} alt={`Logo de ${settings.businessName}`} /> : <span className="sidebar-illustration" aria-hidden="true">⌁</span>}
-          <input type="file" accept="image/png,image/jpeg,image/webp" disabled={!logoReady} onChange={updateCompanyLogo} />
-          <span className="company-logo-hint">{companyLogo ? "Cambiar logo" : "Agregar logo"}</span>
-        </label>
-        <div className="sidebar-title">
-          <strong>{settings.businessName}</strong>
-          <span>Sistema integral</span>
-        </div>
-        <nav className="sidebar-nav">
-          <span className="sidebar-section">Principal</span>
-          <button
-            type="button"
-            className={`sidebar-link ${activeSection === "dashboard" ? "active" : ""}`}
-            onClick={showDashboard}
-          >
-            <span className="sidebar-icon">▦</span>
-            Dashboard
-          </button>
-          <button
-            type="button"
-            className={`sidebar-link ${activeSection === "orders" ? "active" : ""}`}
-            onClick={showOrders}
-            aria-controls="admin-orders"
-          >
-            <span className="sidebar-icon">≡</span>
-            Órdenes
-          </button>
-          <span className="sidebar-section">Gestión</span>
-          <button
-            type="button"
-            className={`sidebar-link ${activeSection === "inventory" ? "active" : ""}`}
-            onClick={showInventory}
-          >
-            <span className="sidebar-icon">⚙</span>
-            Inventario inteligente
-          </button>
-          <button
-            type="button"
-            className={`sidebar-link ${activeSection === "clients" ? "active" : ""}`}
-            onClick={showClients}
-          >
-            <span className="sidebar-icon">♙</span>
-            Clientes y garantías
-          </button>
-          <button
-            type="button"
-            className={`sidebar-link ${activeSection === "reports" ? "active" : ""}`}
-            onClick={showReports}
-          >
-            <span className="sidebar-icon">⌁</span>
-            Reportes avanzados
-          </button>
-          <button
-            type="button"
-            className={`sidebar-link ${activeSection === "settings" ? "active" : ""}`}
-            onClick={showSettings}
-          >
-            <span className="sidebar-icon">⚙</span>
-            Ajustes
-          </button>
-        </nav>
-        <div className="sidebar-footer">
-          {CLIENT_ENABLED && (
-            <button type="button" className="sidebar-client-link" onClick={onLogout}>
-              Cerrar sesión
-            </button>
-          )}
-          <span>Versión {version}</span>
-        </div>
-      </aside>
-      <main className="admin-main">
-        {logoError && <p className="form-error" role="alert">{logoError}</p>}
-        {(activeSection === "dashboard" || activeSection === "orders") && (
-          <>
-            <section className="dashboard-heading">
-              <div>
-                <p className="eyebrow">OPERACIONES HOY</p>
-                <h2>Solicitudes recibidas</h2>
-                <p>Gestiona órdenes creadas por los clientes y agrega sus imágenes.</p>
-              </div>
-              <div className="summary">
-                <strong>{repairs.length}</strong>
-                <span>órdenes totales</span>
-              </div>
-            </section>
-            <section className="dashboard-stats" aria-label="Resumen de órdenes">
-              <Metric
-                label="Órdenes totales"
-                value={repairs.length}
-                tone="green"
-                icon="▣"
-              />
-              <Metric
-                label="En diagnóstico"
-                value={statusTotals.find((item) => item.status === "En diagnóstico")?.total || 0}
-                tone="blue"
-                icon="⌁"
-              />
-              <Metric
-                label="En reparación"
-                value={statusTotals.find((item) => item.status === "En reparación")?.total || 0}
-                tone="orange"
-                icon="⚙"
-              />
-              <Metric
-                label="Entregadas"
-                value={statusTotals.find((item) => item.status === "Entregado")?.total || 0}
-                tone="purple"
-                icon="↥"
-              />
-            </section>
-            <section
-              ref={ordersSectionRef}
-              id="admin-orders"
-              className="workspace admin-orders-only"
-              tabIndex={-1}
-            >
-              <OrderList
-                search={search}
-                setSearch={setSearch}
-                filteredRepairs={filteredRepairs}
-                updateStatus={updateStatus}
-                updatePhotos={updatePhotos}
-                requestDelete={requestDelete}
-                openReceipt={openReceipt}
-              />
-            </section>
-          </>
-        )}
-
-        {activeSection === "inventory" && (
-          <section className="panel inventory-panel">
-            <div className="panel-heading">
-              <div>
-                <h3>Inventario inteligente</h3>
-                <p>Control de repuestos, mínimos y movimientos del taller.</p>
-              </div>
-              <span className="inventory-sync">Sincronizado ahora</span>
-            </div>
-            {inventoryError && <p className="form-error" role="alert">{inventoryError}</p>}
-            <form className="inventory-form" onSubmit={saveInventoryItem}>
-              <div className="inventory-form-title">
-                <div>
-                  <strong>{editingInventoryId ? "Editar repuesto" : "Agregar repuesto"}</strong>
-                </div>
-                {editingInventoryId && <button type="button" className="inventory-cancel" onClick={resetInventoryForm}>Cancelar edición</button>}
-              </div>
-              <div className="inventory-form-fields">
-                <input required aria-label="Nombre del repuesto" value={inventoryForm.item} onChange={(event) => setInventoryForm({ ...inventoryForm, item: event.target.value })} placeholder="Repuesto" />
-                <input required aria-label="SKU o referencia" value={inventoryForm.sku} onChange={(event) => setInventoryForm({ ...inventoryForm, sku: event.target.value })} placeholder="SKU" />
-                <input required value={inventoryForm.category} onChange={(event) => setInventoryForm({ ...inventoryForm, category: event.target.value })} placeholder="Categoría" />
-                <input required aria-label="Existencias" type="number" min="0" value={inventoryForm.stock} onChange={(event) => setInventoryForm({ ...inventoryForm, stock: event.target.value })} placeholder="Cantidad" />
-                <input required aria-label="Stock mínimo" type="number" min="0" value={inventoryForm.minimum} onChange={(event) => setInventoryForm({ ...inventoryForm, minimum: event.target.value })} placeholder="Mínimo" />
-                <input required aria-label="Costo unitario" type="number" min="0" value={inventoryForm.cost} onChange={(event) => setInventoryForm({ ...inventoryForm, cost: event.target.value })} placeholder="Costo" />
-                <input required value={inventoryForm.supplier} onChange={(event) => setInventoryForm({ ...inventoryForm, supplier: event.target.value })} placeholder="Proveedor" />
-                <button type="submit" className="inventory-save" disabled={!inventoryReady}>{editingInventoryId ? "Guardar cambios" : "Guardar repuesto"}</button>
-              </div>
-            </form>
-            <div className="inventory-overview">
-              <div><span>Valor en stock</span><strong>{currencyPrefix}{inventoryValue.toLocaleString("es-CO")}</strong></div>
-              <div><span>Referencias activas</span><strong>{inventoryData.length}</strong></div>
-              <div className={lowStockCount > 0 ? "inventory-alert" : ""}><span>Requieren atención</span><strong>{lowStockCount}</strong></div>
-            </div>
-            <div className="inventory-toolbar">
-              <input
-                aria-label="Buscar repuesto"
-                value={inventorySearch}
-                onChange={(event) => setInventorySearch(event.target.value)}
-                placeholder="Buscar por nombre, SKU o proveedor"
-              />
-              <select
-                aria-label="Filtrar inventario por estado"
-                value={inventoryFilter}
-                onChange={(event) => setInventoryFilter(event.target.value)}
-              >
-                {inventoryLevels.map((level) => <option key={level}>{level}</option>)}
-              </select>
-            </div>
-            <div className="inventory-grid">
-              {filteredInventory.map((item) => (
-                <article key={item.id} className="inventory-card">
-                  <div className="inventory-card-heading">
-                    <div>
-                      <strong>{item.item}</strong>
-                      <small>{item.category} · {item.sku}</small>
-                    </div>
-                    <span className={`inventory-level inventory-level-${inventoryLevel(item.stock).toLowerCase()}`}>
-                      {inventoryLevel(item.stock)}
-                    </span>
-                  </div>
-                  <div className="inventory-stock-row">
-                    <div><b>{item.stock}</b><span>unidades disponibles</span></div>
-                    <small>Mínimo: {item.minimum}</small>
-                  </div>
-                  <div className="inventory-progress"><span style={{ width: `${Math.min((item.stock / Math.max(item.minimum * 2, 1)) * 100, 100)}%` }} /></div>
-                  <div className="inventory-details">
-                    <span>Proveedor: {item.supplier}</span>
-                    <span>{currencyPrefix}{item.cost.toLocaleString("es-CO")} / unidad</span>
-                  </div>
-                  <div className="inventory-actions">
-                    <button
-                      type="button"
-                      disabled={!inventoryReady || item.stock === 0}
-                      onClick={() => setInventoryData((current) => current.map((entry) => entry.id === item.id ? { ...entry, stock: Math.max(entry.stock - 1, 0) } : entry))}
-                    >
-                      -1 salida
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!inventoryReady}
-                      onClick={() => setInventoryData((current) => current.map((entry) => entry.id === item.id ? { ...entry, stock: entry.stock + 1 } : entry))}
-                    >
-                      +1 entrada
-                    </button>
-                    <button type="button" disabled={!inventoryReady} onClick={() => editInventoryItem(item)}>Editar</button>
-                    <button type="button" disabled={!inventoryReady} className="inventory-delete" onClick={() => removeInventoryItem(item.id)}>Eliminar</button>
-                  </div>
-                </article>
-              ))}
-            </div>
-            {filteredInventory.length === 0 && <p className="empty inventory-empty">No hay repuestos que coincidan con la búsqueda.</p>}
-          </section>
-        )}
-
-        {activeSection === "clients" && (
-          <section className="panel clients-panel">
-            <div className="panel-heading">
-              <div>
-                <h3>Clientes y garantías</h3>
-                <p>Consulta clientes, equipos atendidos y vencimientos próximos.</p>
-              </div>
-            </div>
-            {warrantyError && <p className="form-error" role="alert">{warrantyError}</p>}
-            <div className="client-overview">
-              <div><span>Clientes con órdenes</span><strong>{clientsData.length}</strong></div>
-              {clientWarrantyCounts.map((item) => <div key={item.status} className={`client-count client-count-${item.status.toLowerCase().replaceAll(" ", "-")}`}><span>{item.status}</span><strong>{item.total}</strong></div>)}
-            </div>
-            <div className="client-toolbar">
-              <input aria-label="Buscar cliente" value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Buscar por nombre, correo, teléfono o equipo" />
-              <select aria-label="Filtrar garantías" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}>
-                <option>Todos</option><option>Vigente</option><option>Por vencer</option><option>Vencida</option><option>Sin garantía</option>
-              </select>
-            </div>
-            <div className="client-grid">
-              {filteredClients.map((client) => {
-                const warranty = warrantyState(client.warrantyUntil);
-                return (
-                <article key={client.id} className="customer-card">
-                  <div className="customer-header">
-                    <div><strong>{client.name}</strong><small>{client.email}</small></div>
-                    <span className={`status-badge ${warranty === "Vigente" ? "success" : warranty === "Vencida" ? "danger" : warranty === "Sin garantía" ? "neutral" : "warning"}`}>{warranty}</span>
-                  </div>
-                  <div className="customer-details"><span>Teléfono<strong>{client.phone}</strong></span><span>Equipo<strong>{client.device}</strong></span><span>Último servicio<strong>{client.lastService}</strong></span><span>Tickets activos<strong>{client.tickets}</strong></span></div>
-                  <div className="warranty-expiry"><span>Garantía hasta</span><strong>{warrantyLabel(client.warrantyUntil)}</strong></div>
-                  <div className="customer-actions">
-                    <button type="button" onClick={() => openClientOrders(client)}>Ver órdenes</button>
-                    <button type="button" disabled={!warrantiesReady} onClick={() => extendClientWarranty(client)}>{warranty === "Vigente" ? "Extender garantía" : "Asignar garantía"}</button>
-                    {warranty !== "Sin garantía" && <button type="button" disabled={!warrantiesReady} className="customer-remove-warranty" onClick={() => removeClientWarranty(client)}>Eliminar garantía</button>}
-                  </div>
-                </article>
-                );
-              })}
-            </div>
-            {filteredClients.length === 0 && <p className="empty inventory-empty">No hay clientes que coincidan con la búsqueda.</p>}
-          </section>
-        )}
-
-        {activeSection === "reports" && (
-          <section className="panel reports-panel">
-            <div className="panel-heading">
-              <div>
-                <h3>Reportes avanzados</h3>
-                <p>Resumen operativo basado en las órdenes registradas.</p>
-              </div>
-              <div className="report-controls">
-                <select aria-label="Periodo del reporte" value={reportPeriod} onChange={(event) => setReportPeriod(event.target.value)}>
-                  <option value="all">Todo el historial</option>
-                  <option value="30">Últimos 30 días</option>
-                  <option value="90">Últimos 90 días</option>
-                </select>
-                <button type="button" className="report-export" onClick={exportReport}>Exportar CSV</button>
-              </div>
-            </div>
-            <div className="report-summary">
-              <div className="report-kpi">
-                <span>Órdenes analizadas</span>
-                <strong>{reportRepairs.length}</strong>
-              </div>
-              <div className="report-kpi">
-                <span>Órdenes activas</span>
-                <strong>{activeCount}</strong>
-              </div>
-              <div className="report-kpi">
-                <span>Entregadas</span>
-                <strong>{deliveredCount}</strong>
-              </div>
-              <div className="report-kpi">
-                <span>Cumplimiento</span>
-                <strong>{completionRate}%</strong>
-              </div>
-            </div>
-            <div className="report-bars" aria-label="Estadísticas por estado">
-              {reportStatusTotals.map((item) => (
-                <div key={item.status} className="report-bar-row">
-                  <span>{item.status}</span>
-                  <div className="report-bar-track">
-                    <div
-                      className="report-bar-fill"
-                      style={{ width: `${(item.total / reportMaxStatusTotal) * 100}%` }}
-                    />
-                  </div>
-                  <strong>{item.total}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {activeSection === "settings" && (
-          <form className="panel settings-panel" onSubmit={async (event) => {
-            event.preventDefault();
-            if (!settingsReady) return;
-            try {
-              const saved = await saveSetting("workshop-settings", settings);
-              setSettingsSaved(saved);
-              if (!saved) setNotice("No se pudieron guardar los ajustes del taller.");
-            } catch {
-              setSettingsSaved(false);
-              setNotice("No se pudieron guardar los ajustes del taller.");
-            }
-          }}>
-            <div className="panel-heading">
-              <div>
-                <h3>Ajustes</h3>
-                <p>Configura la información que utilizan tus órdenes y notificaciones.</p>
-              </div>
-              {settingsSaved && <span className="settings-saved">Cambios guardados</span>}
-            </div>
-            <div className="settings-columns">
-              <section className="settings-group">
-                <h4>Información del taller</h4>
-                <label>Nombre comercial<input required value={settings.businessName} onChange={(event) => setSettings({ ...settings, businessName: event.target.value })} /></label>
-                <label>Teléfono de atención<input required value={settings.businessPhone} onChange={(event) => setSettings({ ...settings, businessPhone: event.target.value })} /></label>
-                <label>Correo de soporte<input required type="email" value={settings.businessEmail} onChange={(event) => setSettings({ ...settings, businessEmail: event.target.value })} /></label>
-                <label>Dirección<input required value={settings.businessAddress} onChange={(event) => setSettings({ ...settings, businessAddress: event.target.value })} /></label>
-              </section>
-              <section className="settings-group">
-                <h4>Operación</h4>
-                <label>Moneda<select value={settings.currency} onChange={(event) => setSettings({ ...settings, currency: event.target.value })}><option>PEN - Sol peruano</option><option>USD - Dólar estadounidense</option><option>COP - Peso colombiano</option><option>MXN - Peso mexicano</option></select></label>
-                <label>Zona horaria<select value={settings.timezone} onChange={(event) => setSettings({ ...settings, timezone: event.target.value })}><option>Bogotá (GMT-5)</option><option>Ciudad de México (GMT-6)</option><option>Lima (GMT-5)</option></select></label>
-                <label>Horario de atención<input value={settings.serviceHours} onChange={(event) => setSettings({ ...settings, serviceHours: event.target.value })} /></label>
-                <label>Tiempo de respuesta esperado<select value={settings.responseTime} onChange={(event) => setSettings({ ...settings, responseTime: event.target.value })}><option>24 horas</option><option>48 horas</option><option>3 a 5 días</option></select></label>
-              </section>
-            </div>
-            <div className="settings-list">
-              <label><input type="checkbox" checked={settings.autoNotifications} onChange={() => setSettings({ ...settings, autoNotifications: !settings.autoNotifications })} />Notificaciones automáticas a clientes</label>
-              <label><input type="checkbox" checked={settings.notifyOnStatus} onChange={() => setSettings({ ...settings, notifyOnStatus: !settings.notifyOnStatus })} />Avisar cuando cambie el estado de una orden</label>
-              <label><input type="checkbox" checked={settings.automaticReport} onChange={() => setSettings({ ...settings, automaticReport: !settings.automaticReport })} />Generar resumen operativo automático</label>
-              <label><input type="checkbox" checked={settings.darkMode} onChange={() => setSettings({ ...settings, darkMode: !settings.darkMode })} />Modo oscuro del panel administrativo</label>
-            </div>
-            <div className="settings-footer"><small>Configuración guardada localmente.</small><button type="submit" disabled={!settingsReady} className="inventory-save">Guardar ajustes</button></div>
-          </form>
-        )}
-      </main>
-    </div>
-  );
-}
-
-function Metric({ label, value, tone, icon }) {
-  return (
-    <div className={`metric-card ${tone}`}>
-      <div className="metric-label">
-        <span>{label}</span>
-        <span className="metric-icon" aria-hidden="true">{icon}</span>
-      </div>
-      <strong>{value}</strong>
-      <small>Actualizado ahora</small>
-    </div>
-  );
-}
-
-function RepairForm({
-  form,
-  setForm,
-  formError,
-  addRepair,
-  clearFormError,
-  className = "",
-  title = "Nuevo ingreso",
-  subtitle = "(orden de servicio)",
-  submitLabel = "Crear orden",
-  deviceSuggestions = [],
-}) {
-  const [showAllDevices, setShowAllDevices] = useState(false);
-  const normalizedDevice = form.device.trim().toLowerCase();
-  const hasExactDevice = deviceSuggestions.some(
-    (device) => device.toLowerCase() === normalizedDevice,
-  );
-  const matchingDevices = normalizedDevice && !hasExactDevice
-    ? (showAllDevices
-        ? deviceSuggestions
-        : deviceSuggestions
-        .filter((device) =>
-          device.toLowerCase().includes(normalizedDevice),
-        ))
-    : [];
-
-  return (
-    <form className={`panel form-panel ${className}`} onSubmit={addRepair}>
-      <div className="panel-heading">
-        <h3>{title} <small>{subtitle}</small></h3>
-        <div className="form-heading-actions">
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => {
-              setForm(emptyForm);
-              clearFormError?.();
-            }}
-          >
-            Limpiar
-          </button>
-          <span>1</span>
-        </div>
-      </div>
-      <label>
-        Cliente
-        <input
-          required
-          maxLength={repairLimits.customer}
-          value={form.customer}
-          onChange={(event) =>
-            setForm({ ...form, customer: event.target.value })
-          }
-          placeholder="Nombre completo"
-        />
-      </label>
-      <label>
-        Teléfono
-        <input
-          required
-          maxLength={repairLimits.phone}
-          value={form.phone}
-          onChange={(event) => setForm({ ...form, phone: event.target.value })}
-          placeholder="300 000 0000"
-        />
-      </label>
-      <label>
-        Laptop
-        <input
-          required
-          maxLength={repairLimits.device}
-          value={form.device}
-          onChange={(event) => {
-            setShowAllDevices(false);
-            setForm({ ...form, device: event.target.value });
-          }}
-          autoComplete="off"
-          placeholder="Ej. HP Pavilion 15 - SN12345"
-        />
-        <small className="field-help">Escribe marca, modelo y serial de la laptop.</small>
-        {matchingDevices.length > 0 && (
-          <div className="device-suggestions" aria-label="Modelos sugeridos">
-            {!showAllDevices && deviceSuggestions.length > matchingDevices.length && (
-              <button
-                type="button"
-                className="show-all-devices"
-                onClick={() => setShowAllDevices(true)}
-              >
-                Ver todos los modelos ({deviceSuggestions.length})
-              </button>
-            )}
-            {matchingDevices.map((device) => (
-              <button
-                type="button"
-                key={device}
-                onClick={() => {
-                  setShowAllDevices(false);
-                  setForm({ ...form, device });
-                }}
-              >
-                {device}
-              </button>
-            ))}
-          </div>
-        )}
-      </label>
-      <label>
-        Falla reportada
-        <textarea
-          required
-          maxLength={repairLimits.problem}
-          value={form.problem}
-          onChange={(event) =>
-            setForm({ ...form, problem: event.target.value })
-          }
-          placeholder="Describe el problema"
-        />
-      </label>
-      <label>
-        Nombre de quien entrega
-        <input
-          required
-          maxLength={repairLimits.customer}
-          value={form.authorizedBy}
-          onChange={(event) =>
-            setForm({ ...form, authorizedBy: event.target.value })
-          }
-          placeholder="Nombre completo"
-        />
-      </label>
-      <label className="consent">
-        <input
-          type="checkbox"
-          checked={form.consent}
-          onChange={(event) =>
-            setForm({ ...form, consent: event.target.checked })
-          }
-        />{" "}
-        Confirmo que el cliente autoriza la revisión y recibe esta constancia
-        del estado del equipo.
-      </label>
-      <SignaturePad
-        value={form.signature}
-        onChange={(signature) => setForm({ ...form, signature })}
-      />
-      {formError && (
-        <p className="form-error" role="alert">
-          {formError}
-        </p>
-      )}
-      <button type="submit" className="primary-button">
-        {submitLabel}
-      </button>
-    </form>
-  );
-}
-
-function OrderList({
-  search,
-  setSearch,
-  filteredRepairs,
-  updateStatus,
-  updatePhotos,
-  requestDelete,
-  openReceipt,
-}) {
-  const pendingCount = filteredRepairs.filter(
-    (repair) => repair.status === "Recibido",
-  ).length;
-
-  return (
-    <section className="panel orders-panel">
-      <div className="panel-heading">
-        <div>
-          <h3>Solicitudes recibidas</h3>
-          <p>
-            {filteredRepairs.length} solicitud(es)
-            {pendingCount > 0 ? ` · ${pendingCount} pendiente(s)` : ""}
-          </p>
-        </div>
-        <div className="search-controls">
-          <input
-            maxLength="80"
-            className="search"
-            aria-label="Buscar solicitudes"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar solicitud o cliente"
-          />
-          {search && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => setSearch("")}
-            >
-              Limpiar
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="order-list">
-        {filteredRepairs.map((repair) => (
-          <article className="order" key={repair.id}>
-            <div className="order-id">
-              {repair.id}
-              <small>{repair.updated}</small>
-            </div>
-            <div>
-              <h4>{repair.device}</h4>
-              <p>
-                {repair.customer} · {repair.problem}
-              </p>
-              <small>
-                {repair.photos?.length || 0} foto(s) ·{" "}
-                {repair.authorizedBy
-                  ? "Autorizada"
-                  : repair.signature
-                    ? "Firmada"
-                    : "Sin autorización"}
-              </small>
-              <span className={`status-badge ${statusClass(repair.status)}`}>
-                {repair.status}
-              </span>
-              <label className="photo-update">
-                Agregar / actualizar fotos
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) => updatePhotos(repair.id, event)}
-                />
-              </label>
-            </div>
-            <select
-              aria-label={`Estado de ${repair.id}`}
-              value={repair.status}
-              onChange={(event) => updateStatus(repair.id, event.target.value)}
-            >
-              {repairStatuses.map((status) => (
-                <option key={status}>{status}</option>
-              ))}
-            </select>
-            <div className="order-actions">
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => openReceipt(repair)}
-              >
-                Constancia
-              </button>
-              <button
-                type="button"
-                className="text-button danger-text"
-                onClick={() => requestDelete(repair.id)}
-              >
-                Eliminar
-              </button>
-            </div>
-          </article>
-        ))}
-        {filteredRepairs.length === 0 && (
-          <p className="empty">No hay órdenes que coincidan.</p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ClientView({
-  repairs,
-  clientEmail,
-  form,
-  setForm,
-  formError,
-  clearFormError,
-  addRepair,
-}) {
-  const [code, setCode] = useState("");
-  const [lookupPhone, setLookupPhone] = useState("");
-  const [result, setResult] = useState(null);
-
-  function findRepair(event) {
-    event.preventDefault();
-    const normalizedCode = code.trim().toUpperCase();
-    setResult(
-      /^REP-\d{4,8}$/.test(normalizedCode)
-        ? repairs.find(
-            (repair) =>
-              repair.id === normalizedCode &&
-              canClientView(repair, clientEmail, lookupPhone),
-          ) || false
-        : false,
-    );
-  }
-
-  const progressStatusIndex = {
-    Recibido: 0,
-    "En diagnóstico": 1,
-    "Esperando repuesto": 1,
-    "En reparación": 2,
-    "Listo para entregar": 4,
-    Entregado: 4,
-  };
-  const currentStatusIndex = result ? progressStatusIndex[result.status] ?? -1 : -1;
-  const deviceSuggestions = [
-    ...new Set([
-      ...repairsOwnedBy(repairs, clientEmail).map((repair) => repair.device),
-      ...laptopCatalog,
-    ]),
-  ];
-
-  return (
-    <main className="client-view">
-      <div className="client-portal-grid">
-        <RepairForm
-          className="client-request-form"
-          form={form}
-          setForm={setForm}
-          formError={formError}
-          clearFormError={clearFormError}
-          addRepair={addRepair}
-          title="Solicitar reparación"
-          subtitle="(el taller la revisará)"
-          submitLabel="Enviar solicitud"
-          deviceSuggestions={deviceSuggestions}
-        />
-        <div className="client-card">
-        <div className="client-kicker">
-          <span className="client-mark">MC</span>
-          <p className="eyebrow">ÁREA DEL CLIENTE</p>
-        </div>
-        <h2>Consulta tu reparación</h2>
-        <p>
-          Ingresa el código de tu orden para conocer el estado actual de tu
-          equipo y las últimas novedades del taller.
-        </p>
-        <form onSubmit={findRepair} className="lookup">
-          <input
-            required
-            maxLength="12"
-            aria-label="Código de reparación"
-            value={code}
-            onChange={(event) => setCode(event.target.value.toUpperCase())}
-            placeholder="Código: REP-1001"
-          />
-          <input
-            type="tel"
-            maxLength="30"
-            aria-label="Teléfono registrado en la orden"
-            value={lookupPhone}
-            onChange={(event) => setLookupPhone(event.target.value)}
-            placeholder="Teléfono (solo si el taller creó la orden)"
-          />
-          <button type="submit" className="primary-button">Consultar estado</button>
-        </form>
-        {result && (
-          <div className="result">
-            <div className="result-heading">
-              <div>
-                <span className="result-label">ORDEN {result.id}</span>
-                <strong>{result.status}</strong>
-              </div>
-              <span className={`status-badge ${statusClass(result.status)}`}>
-                En seguimiento
-              </span>
-            </div>
-            <div className="client-progress" aria-label="Progreso de la reparación">
-              {[
-                ["Recibido", "▣"],
-                ["Diagnóstico", "⌕"],
-                ["Reparación", "⚒"],
-                ["Control de calidad", "✓"],
-                ["Listo para recoger", "➜"],
-              ].map(([status, icon], index) => (
-                <div
-                  className={index <= Math.min(currentStatusIndex, 4) ? "progress-step complete" : "progress-step"}
-                  key={status}
-                >
-                  <span className="progress-icon">{icon}</span>
-                  <small>{status}</small>
-                </div>
-              ))}
-            </div>
-            <div className="client-details">
-              <div>
-                <small>Equipo</small>
-                <strong>{result.device}</strong>
-              </div>
-              <div>
-                <small>Cliente</small>
-                <strong>{result.customer}</strong>
-              </div>
-              <div>
-                <small>Última actualización</small>
-                <strong>{result.updated}</strong>
-              </div>
-              <div>
-                <small>Falla reportada</small>
-                <strong>{result.problem}</strong>
-              </div>
-            </div>
-            {result.photos?.length > 0 && (
-              <div className="client-photos">
-                <div className="section-label">
-                  <strong>Fotos de recepción</strong>
-                  <span>{result.photos.length} archivo(s)</span>
-                </div>
-                <div className="photo-preview">
-                  {result.photos.map((photo, index) => (
-                    <img
-                      key={photo}
-                      src={photo}
-                      alt={`Foto del equipo ${index + 1}`}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-            <p className="client-note">Te avisaremos cuando el estado de tu equipo cambie.</p>
-          </div>
-        )}
-        {result === null && (
-          <div className="client-benefits" aria-label="Información de consulta">
-            <span>Seguimiento en línea</span>
-            <span>Información actualizada</span>
-            <span>Consulta disponible siempre</span>
-          </div>
-        )}
-        {result === false && (
-          <p className="error" role="alert">No encontramos una orden con esos datos. Revisa el código y, si el taller creó la orden, escribe también el teléfono registrado.</p>
-        )}
-        </div>
-      </div>
-    </main>
   );
 }
 

@@ -1,128 +1,72 @@
-# Sistema de Gestion 0.1
+# Sistema de gestión
 
-MVP de un sistema para talleres de reparacion de laptops y otros equipos.
+Aplicación web para gestionar reparaciones de laptops y otros equipos. Los
+usuarios acceden desde el navegador; el API Node.js y MySQL centralizan las
+cuentas, órdenes, ajustes e inventario. No se usa Electron, SQLite ni
+almacenamiento local como fuente de datos.
 
-## Ejecutar
+## Funciones
+
+- Acceso del administrador y de clientes; los clientes pueden ingresar por
+  correo/contraseña o verificar su celular con un código de WhatsApp.
+- Crear solicitudes, buscar órdenes y consultar su estado, respetando el acceso
+  del cliente a sus propios registros.
+- Registrar hasta tres fotos de recepción, firma y aceptación; generar,
+  imprimir o descargar constancias.
+- Gestionar inventario y configuración del taller.
+- Consultar el historial administrativo de cambios de estado y movimientos de
+  inventario.
+- Descargar y restaurar respaldos administrativos de órdenes, sin sobrescribir
+  registros existentes.
+- Enviar constancias por correo y códigos por WhatsApp cuando el servidor tenga
+  configuradas esas integraciones y el cliente haya dado su autorización.
+
+## Desarrollo
+
+Requiere Node.js 20+ y una instancia MySQL 8+. Crea una base MySQL vacía y
+configura `MYSQL_URL`, `SESSION_SECRET`, `ADMIN_EMAIL` y `ADMIN_PASSWORD` en
+`server/.env` (copia `server/.env.example`). Aplica el esquema con las
+migraciones antes de iniciar la API; el primer administrador se crea al arrancar.
+No se importan datos desde PostgreSQL ni SQLite.
+
+En dos terminales:
 
 ```bash
-npm install
-npm start
+npm --prefix server install
+npm --prefix server run migrate:dev
+npm --prefix server run dev
 ```
 
-Esto compila el frontend y abre la aplicación de escritorio con Electron.
-
-## Dos versiones: administrador y cliente
-
-La app se compila en dos modos, así cada PC muestra solo lo que le corresponde:
-
-| Modo | Qué muestra | Instalador |
-| --- | --- | --- |
-| `admin` | Solo el panel del jefe (abre directamente, sin contraseña) | `npm run dist:admin` -> `release/admin/Taller-Digital-Admin-Setup-0.1.0.exe` |
-| `client` | Solo el portal de clientes (sin acceso ni credenciales de administrador) | `npm run dist:client` -> `release/client/Taller-Digital-Setup-0.1.0.exe` |
-
-Para probar sin instalador: `npm run start:admin` o `npm run start:client`.
-En desarrollo web: `npm run dev:admin`, `npm run dev:client` o `npm run dev`
-(este último muestra ambos, solo para desarrollo). Si un build de producción no
-indica modo, usa `client` por seguridad. El modo se define en
-`frontend/.env.admin` y `frontend/.env.client`.
-
-Al instalar, la base de datos se crea automáticamente en la carpeta de datos
-del usuario de Windows.
-
-Para ejecutar solo la versión web durante el desarrollo:
-
 ```bash
-cd frontend
-npm install
+npm --prefix frontend install
 npm run dev
 ```
 
-## Funciones actuales
+Vite reenvía las solicitudes `/api` al servidor local en `http://localhost:3001`.
+Para una compilación estática ejecuta `npm run build`. `npm start` inicia el API;
+`npm start` presupone que las migraciones ya se aplicaron. La aplicación web se
+sirve desde el hosting web configurado para el proyecto.
 
-- Panel de administrador para crear ordenes de reparacion.
-- Busqueda por codigo, cliente o equipo.
-- Actualizacion del estado de cada orden.
-- Registro e inicio de sesión de clientes mediante correo y contraseña.
-- El cliente puede crear solicitudes y consultar sus reparaciones después de iniciar sesión.
-- El administrador gestiona las solicitudes y agrega las fotos de recepción desde el panel.
-- Persistencia local en SQLite desde Electron.
-- Validación básica del alta de órdenes.
-- Generación de códigos consecutivos para nuevas órdenes.
-- El rol técnico está desactivado temporalmente; se habilitará en una versión posterior.
-- Registro de hasta 3 fotos comprimidas del equipo al recibirlo.
-- Firma dibujada y aceptación de una constancia de revisión.
-- Limpieza del formulario y de la búsqueda.
-- Confirmación antes de cambiar estados o eliminar órdenes.
-- Constancia imprimible o descargable en formato HTML.
-- Estados identificados visualmente por color.
-- Límite de 3 imágenes de máximo 5 MB cada una.
+Consulta [`server/README.md`](server/README.md) para variables de entorno,
+configuración de correo/WhatsApp, Docker y despliegue de MySQL.
 
-## Estructura inicial
+## Datos y privacidad
 
-- `src/App.jsx`: flujo principal y navegación del MVP.
-- `src/data/repairData.js`: estados y datos iniciales; aquí se podrán añadir catálogos.
-- `main.js`: ventana de Electron, esquema SQLite y canales IPC.
-- `preload.js`: puente seguro entre el renderer y Electron.
-- `frontend/src/services/dbService.js`: API asíncrona de persistencia para SQLite y fallback web.
-- `frontend/src/services/repairStorage.js`: validación y persistencia de órdenes.
-- `frontend/src/services/accountStorage.js`: cuentas y sesiones de clientes.
-- `src/index.css`: estilos de la primera versión.
-- `src/components/modals/`: confirmaciones y constancias de órdenes.
+MySQL es la única persistencia de la aplicación. La base nueva empieza vacía y
+no se migran automáticamente los registros de la versión anterior. Las sesiones
+se validan en el servidor; las órdenes de clientes se asocian a su cuenta o al
+celular verificado y no se permiten búsquedas por código solamente.
 
-## Datos locales
-
-Electron crea automáticamente `taller-digital.db` en `app.getPath("userData")`.
-La base contiene las tablas `accounts`, `sessions`, `settings`, `inventory` y
-`repairs`. El renderer no tiene acceso directo al sistema de archivos ni a
-SQLite: todas las operaciones pasan por `preload.js` y canales IPC.
-
-Al ejecutar Vite directamente, `dbService.js` conserva un fallback en el
-navegador para facilitar el desarrollo web.
-
-## Acceso y contraseñas
-
-- **Cliente:** crea su propia cuenta con correo y contraseña.
-- **Administrador (jefe):** la versión `admin` abre directamente el panel, sin
-  solicitar usuario ni contraseña. En el modo de desarrollo combinado, el botón
-  **Entrar al panel administrativo** también abre el panel directamente.
-- **Cliente:** debe registrarse con correo y contraseña para crear y consultar
-  sus reparaciones. Las nuevas contraseñas se almacenan con PBKDF2 y sal
-  aleatoria; las cuentas anteriores con SHA-256 se actualizan al iniciar sesión.
-- La sesión de cliente se conserva solo mientras la ventana está abierta; al
-  cerrar y volver a abrir la aplicación, se solicita iniciar sesión otra vez.
-
-Esto sigue siendo autenticación local: antes de desplegar el sistema para uso
-multiusuario se necesita un backend con sesiones seguras y autorización por orden.
-Los instaladores de administrador y cliente guardan sus bases de datos localmente
-y por separado. Por eso, las solicitudes creadas en un equipo cliente no aparecen
-automáticamente en el equipo del taller; para trabajar entre equipos hace falta
-un backend compartido.
-
-## Privacidad de las órdenes
-
-Un cliente solo ve las órdenes que creó con su cuenta. Para consultar una orden
-creada por el taller (sin cuenta asociada) debe escribir el código **y** el
-teléfono registrado en la orden, así no se pueden ver órdenes ajenas probando
-códigos consecutivos.
+Revisa [`SECURITY.md`](SECURITY.md) antes de operar con datos reales.
 
 ## Pruebas
 
 ```bash
 npm test
+npm --prefix server run test:integration
 ```
 
-Verifican las reglas de privacidad de las órdenes y las utilidades de datos. En
-GitHub se ejecutan solas (con la compilación de ambas versiones) en cada push
-mediante `.github/workflows/ci.yml`.
-
-## Uso rápido
-
-1. Entra en `frontend` y ejecuta `npm install`.
-2. Ejecuta `npm run dev`.
-3. Abre la dirección que muestre Vite.
-4. Crea una cuenta de cliente e inicia sesión.
-5. Completa la solicitud y guarda el código generado.
-6. Desde el panel del administrador puedes cambiar el estado y agregar las fotos de recepción.
-7. El cliente puede consultar sus órdenes con el código generado.
-
-Los datos se conservan únicamente en el navegador actual. Borrar los datos del sitio elimina las órdenes guardadas.
+Las pruebas de integración requieren `MYSQL_TEST_URL` apuntando a una base MySQL
+local cuyo nombre termine en `_test`. CI inicia MySQL 8 para ejecutar esas pruebas;
+el conjunto de migraciones crea y elimina bases temporales con ese sufijo, por lo
+que el usuario de prueba necesita permisos `CREATE DATABASE` y `DROP DATABASE`.

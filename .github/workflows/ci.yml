@@ -2,28 +2,50 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "hardening/**"]
   pull_request:
 
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    env:
+      MYSQL_TEST_URL: mysql://root:root@127.0.0.1:3306/sistema_test
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: sistema_test
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             package-lock.json
             frontend/package-lock.json
-      # --ignore-scripts: las pruebas no necesitan compilar better-sqlite3.
+            server/package-lock.json
       - run: npm ci --ignore-scripts
+      - run: npm --prefix server ci
+      - name: Aplicar migraciones MySQL
+        run: npm --prefix server run migrate
+        env:
+          MYSQL_URL: ${{ env.MYSQL_TEST_URL }}
       - run: npm test
+      - run: npm --prefix server run test:integration
       - run: npm --prefix frontend ci
-      - name: Compilar versión administrador
-        run: npm --prefix frontend run build:admin
-      - name: Compilar versión cliente
-        run: npm --prefix frontend run build:client
-      - name: Verificar que ambos modos generan artefactos
-        run: test -s frontend/dist/index.html
+      - name: Compilar aplicación web
+        run: npm --prefix frontend run build
+      - name: Verificar que no hay credenciales de prueba en los builds
+        run: |
+          if grep -rq "Admin123" frontend/dist; then
+            echo "Se encontró una contraseña de prueba en el build"; exit 1
+          fi

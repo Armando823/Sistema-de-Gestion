@@ -1,0 +1,23 @@
+{
+  "name": "taller-digital-notificaciones",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "API central del sistema web de gestión de reparaciones",
+  "main": "src/index.js",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node ./src/index.js",
+    "dev": "node --env-file=.env src/index.js",
+    "migrate": "node ./src/migrate.js",
+    "migrate:dev": "node --env-file=.env src/migrate.js",
+    "backup": "node ./scripts/backup.mjs",
+    "backup:dev": "node --env-file=.env scripts/backup.mjs",
+    "test": "node --test test/server.test.mjs test/backup.test.mjs",
+    "test:integration": "node --test test/database.integration.test.mjs test/migrations.integration.test.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.24.6",
+    "nodemailer": "^10.0.15"
+  }
+}

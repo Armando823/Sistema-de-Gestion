@@ -1,5 +1,5 @@
 import { isValidRepair } from "../utils/repairValidation";
-import { loadRepairs as readRepairs, saveRepairs as writeRepairs } from "./dbService";
+import { loadRepairs as readRepairs } from "./dbService";
 
 export async function loadRepairs() {
   const savedRepairs = await readRepairs();
@@ -8,9 +8,4 @@ export async function loadRepairs() {
     throw new Error("Hay órdenes dañadas o incompatibles. Se detuvo el guardado para proteger los datos.");
   }
   return savedRepairs;
-}
-
-export async function saveRepairs(repairs) {
-  if (!Array.isArray(repairs) || !repairs.every(isValidRepair)) return false;
-  return writeRepairs(repairs);
 }

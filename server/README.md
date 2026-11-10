@@ -1,0 +1,164 @@
+# Servidor del sistema de gestión
+
+API central Node.js para la aplicación web. Las cuentas, reparaciones, ajustes,
+inventario y códigos de acceso viven en MySQL; la API no usa PostgreSQL ni
+almacenamiento local. Requiere Node.js 24 LTS y MySQL 8+.
+
+## Desarrollo local
+
+1. Crea una base MySQL vacía y copia `.env.example` como `.env`.
+2. Configura `MYSQL_URL` con el usuario, la contraseña y la base creados. Codifica
+   caracteres especiales de la contraseña como URL encoding.
+3. Configura `SESSION_SECRET` con al menos 32 caracteres, `ADMIN_EMAIL` y
+   `ADMIN_PASSWORD` (mínimo 12 caracteres). `MAIL_DRY_RUN=true` evita requerir
+   SMTP durante el desarrollo.
+4. Instala las dependencias y ejecuta primero las migraciones:
+
+```bash
+npm install
+npm run migrate:dev
+npm run dev
+```
+
+La migración crea el esquema y registra su versión. El servidor normal no ejecuta
+DDL al arrancar; crea la cuenta administrativa inicial cuando corresponde. En
+instalaciones Docker, `docker compose up -d --build` ejecuta el servicio
+`migrate` después de que MySQL esté listo y solo entonces inicia la API.
+No se importan datos desde SQLite o PostgreSQL.
+`GET /health` verifica que el proceso está activo y `GET /ready` comprueba la
+conexión MySQL. Para ejecutar las pruebas:
+
+```bash
+npm test
+```
+
+Para la integración, define `MYSQL_TEST_URL` con una URL de MySQL local que use
+una base terminada en `_test` y ejecuta `npm run test:integration`.
+
+La prueba de integración solo acepta MySQL local y una base cuyo nombre termine
+en `_test`; no la apuntes a datos reales. Las pruebas de migraciones crean y
+eliminan bases temporales, así que el usuario necesita permisos `CREATE DATABASE`
+y `DROP DATABASE`.
+
+### Despliegue y actualización de esquema
+
+Ejecuta `npm run migrate` con `MYSQL_URL` y, si se usan, `NODE_ENV` y
+`MYSQL_SSL_CA` configurados antes de actualizar o iniciar la API. El comando
+adquiere un bloqueo de MySQL, verifica checksums y aplica las migraciones SQL
+pendientes en orden; cada archivo debe contener una sola sentencia SQL. No
+modifiques migraciones ya aplicadas; agrega una nueva migración numerada.
+
+En bases existentes sin historial, el migrador valida las tablas y tipos del
+esquema base conocido y las registra como baseline, sin eliminar ni reescribir
+sus registros. Después aplica las migraciones pendientes de revisiones,
+garantías e historiales de auditoría. Si el esquema no coincide, se detiene
+para evitar adoptar una base parcial o desconocida; inspecciona y respalda la
+base antes de corregirla.
+
+MySQL puede confirmar DDL de forma implícita, por lo que no existe rollback
+automático universal para una migración que falla a mitad de ejecución. El
+ejecutor se detiene, no registra la migración fallida como completada y las
+migraciones actuales usan operaciones repetibles para permitir reintentar luego
+de corregir el problema.
+
+## Persistencia de órdenes, garantías e inventario
+
+Las órdenes se crean con `POST /api/repairs` y sus cambios administrativos se
+envían mediante `PATCH /api/repairs/:id` con la versión leída por el cliente. Si
+otra sesión guardó primero, la API responde `409` para evitar sobrescribir su
+cambio. `GET /api/repairs` devuelve un `ETag` asociado a una revisión MySQL
+monótona. Las consultas siguientes pueden enviar `If-None-Match` para recibir
+`304 Not Modified` cuando no hubo cambios; así el sondeo conserva su
+actualización frecuente sin retransmitir fotos ni toda la lista. La revisión se
+incrementa en la misma transacción al crear, actualizar, borrar o asociar una
+orden a una cuenta. La lista de órdenes no admite reemplazo global.
+
+`POST /api/repairs/import` restaura una orden por solicitud y requiere una
+sesión administrativa. El servidor valida los campos permitidos y el contenido;
+responde `409` cuando el código ya existe, sin reemplazar la orden. El respaldo
+JSON versionado exportado por la interfaz se puede restaurar, y también se
+aceptan los formatos antiguos de lista o `{ "repairs": [...] }`. La interfaz
+valida cada registro y muestra por separado cuántos fueron agregados,
+duplicados, inválidos o fallidos.
+
+El respaldo de órdenes es completo para permitir recuperación: incluye datos
+personales de contacto, asignación de cuenta, fotos y firmas. Descárgalo y
+transfiérelo solo por canales protegidos, limita su acceso y bórralo cuando ya
+no sea necesario. La restauración no altera órdenes existentes; un archivo con
+datos personales o medios puede superar el límite de tamaño y requerir dividirse
+en respaldos más pequeños. El archivo y cada solicitud de restauración están
+limitados a 12 MiB.
+
+Las garantías se consultan y guardan en `/api/customers/warranties`; las rutas
+requieren una sesión administrativa. El inventario también requiere ese rol y se
+modifica por elemento:
+
+- `POST /api/inventory` crea un repuesto.
+- `PUT /api/inventory/:id` edita sus datos y aplica el delta de stock indicado.
+- `DELETE /api/inventory/:id` elimina un repuesto.
+- `PATCH /api/inventory/:id/stock` aplica un delta entero a las existencias.
+
+Los movimientos se serializan en MySQL y responden `409` si dejarían existencias
+negativas. No se admite reemplazar la colección completa.
+
+Cada cambio real de estado de una orden registra el estado anterior y nuevo, el
+administrador y la fecha en la misma transacción que actualiza la orden. El
+historial se consulta en `GET /api/repairs/:id/status-history?limit=50&beforeId=<id>`,
+solo para administradores, con páginas de hasta 100 eventos. El inventario
+registra altas, ediciones, entradas/salidas y bajas en la misma transacción que
+modifica el repuesto; su consulta
+`GET /api/inventory/movements?limit=50&beforeId=<id>` requiere administración,
+limita cada página a 100 movimientos y conserva los eventos aunque se borre la
+orden o el repuesto asociado.
+
+## Respaldos de base de datos
+
+El comando `npm run backup` lee usuario, contraseña, host y base desde `MYSQL_URL`; no requiere duplicar la contraseña en `MYSQL_PASSWORD`. Usa `mysqldump` compatible con MySQL 8 y TLS con verificación de identidad del servidor. Si el proveedor entrega una CA privada, configura `MYSQL_SSL_CA` con el certificado PEM. `BACKUP_DIR` permite elegir el destino local; los archivos se escriben con permisos privados y solo se renombran al terminar correctamente.
+
+**Importante para Render:** el disco local de un servicio web gratuito es efímero. No uses `BACKUP_DIR` dentro del contenedor como única copia. Configura un volumen persistente o sincroniza los archivos a almacenamiento externo (por ejemplo, un bucket S3 compatible) y verifica periódicamente una restauración en una base aislada. Esta rama no activa copias automáticas ni sube datos a un proveedor externo: eso requiere elegir y configurar explícitamente el destino y sus credenciales.
+
+## Configuración
+
+| Variable | Uso |
+| --- | --- |
+| `MYSQL_URL` | URL `mysql://usuario:contraseña@host:3306/base`; obligatoria para iniciar el servidor. |
+| `MYSQL_SSL_CA` | CA PEM opcional. En producción se valida siempre el certificado TLS. |
+| `SESSION_SECRET` | Secreto de sesiones, mínimo 32 caracteres. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Credenciales para crear el primer administrador. |
+| `NOTIFY_API_KEY` | Clave opcional para clientes internos del endpoint de correo. |
+| `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Envío de constancias por correo. |
+| `MAIL_DRY_RUN` | `true` registra sin enviar correos. |
+| `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | Credenciales privadas de WhatsApp Cloud API. Deben configurarse juntas. |
+| `WHATSAPP_OTP_TEMPLATE`, `WHATSAPP_ORDER_TEMPLATE`, `WHATSAPP_TEMPLATE_LANGUAGE` | Plantillas aprobadas para OTP y códigos de reparación. |
+| `ALLOWED_ORIGINS` | Orígenes web permitidos, separados por comas, si la interfaz se aloja en otro dominio. |
+| `TRUST_PROXY` | `true` solo detrás de un proxy confiable. |
+| `RATE_LIMIT_IP_PER_HOUR`, `RATE_LIMIT_EMAIL_PER_HOUR` | Límites de envío de correo. |
+| `BUSINESS_*` | Datos del taller incluidos en las constancias. |
+
+No publiques secretos en el frontend. Las sesiones se firman en el servidor; los
+códigos OTP expiran en 10 minutos, se consumen una sola vez y tienen límite de
+intentos. La autorización para mensajes de reparación se guarda con cada orden.
+
+## Despliegue
+
+Despliega la API Node.js junto a una instancia MySQL administrada o privada. Define
+`MYSQL_URL`, `NODE_ENV=production`, `SESSION_SECRET`, las credenciales iniciales
+del administrador, SMTP y WhatsApp si se requieren esas funciones. Cambia
+`MAIL_DRY_RUN=false` después de configurar SMTP. `MYSQL_SSL_CA` solo es necesaria
+cuando el proveedor exige una CA que Node.js no reconoce.
+
+Para Docker, desde esta carpeta:
+
+```bash
+docker compose up -d --build
+```
+
+El servicio escucha en el puerto definido por `PORT` (3001 por defecto). Publica
+la API detrás de HTTPS y configura `/health` como health check. Si la interfaz web
+se publica en un origen distinto, incluye ese origen en `ALLOWED_ORIGINS`.
+
+Los límites antiabuso se guardan en memoria y son por proceso. Mantén una sola
+instancia hasta configurar un limitador compartido antes de escalar horizontalmente.
+
+El despliegue de Render usa Node.js 24 LTS, igual que CI. Mantén alineada la
+versión de Node en los entornos de desarrollo, integración y producción.

@@ -1,0 +1,54 @@
+version: "1"
+services:
+  - type: web
+    name: electronicservis-api
+    runtime: node
+    repo: https://github.com/Armando823/Sistema-de-Gestion
+    plan: free
+    region: oregon
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: RUN_MIGRATIONS
+        value: "true"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: MAIL_DRY_RUN
+        value: "true"
+      - key: BUSINESS_NAME
+        value: "Taller Digital"
+      - key: SESSION_SECRET
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: MYSQL_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  - type: web
+    name: electronicservis-web
+    runtime: static
+    repo: https://github.com/Armando823/Sistema-de-Gestion
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

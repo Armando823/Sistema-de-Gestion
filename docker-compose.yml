@@ -1,0 +1,79 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-taller_digital}
+      MYSQL_USER: ${MYSQL_USER:-taller}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "src/migrate.js"]
+    environment:
+      NODE_ENV: production
+      MYSQL_URL: ${MYSQL_URL:?Set MYSQL_URL in .env; use mysql as the hostname and URL-encode special credentials}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MYSQL_URL: ${MYSQL_URL:?Set MYSQL_URL in .env; use mysql as the hostname and URL-encode special credentials}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env (at least 32 characters)}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      MAIL_DRY_RUN: ${MAIL_DRY_RUN:-true}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      NOTIFY_API_KEY: ${NOTIFY_API_KEY:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      BUSINESS_NAME: ${BUSINESS_NAME:-Taller Digital}
+      BUSINESS_PHONE: ${BUSINESS_PHONE:-}
+      BUSINESS_EMAIL: ${BUSINESS_EMAIL:-}
+      BUSINESS_ADDRESS: ${BUSINESS_ADDRESS:-}
+      BUSINESS_HOURS: ${BUSINESS_HOURS:-}
+      BUSINESS_RESPONSE_TIME: ${BUSINESS_RESPONSE_TIME:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v22.0}
+      WHATSAPP_OTP_TEMPLATE: ${WHATSAPP_OTP_TEMPLATE:-customer_login_otp}
+      WHATSAPP_ORDER_TEMPLATE: ${WHATSAPP_ORDER_TEMPLATE:-repair_order_code}
+      WHATSAPP_TEMPLATE_LANGUAGE: ${WHATSAPP_TEMPLATE_LANGUAGE:-es}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${APP_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  mysql-data:
