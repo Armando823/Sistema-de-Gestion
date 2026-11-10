@@ -1,11 +1,10 @@
 # syntax=docker/dockerfile:1
 
-ARG NODE_VERSION=22-slim
+ARG NODE_VERSION=24-slim
 FROM node:${NODE_VERSION} AS frontend-build
 WORKDIR /build/frontend
-# Instala dependencias sin lockfile para resolver binarios nativos de Linux (rollup/esbuild).
-COPY frontend/package.json ./
-RUN npm install
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 

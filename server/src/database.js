@@ -96,13 +96,6 @@ export function createDatabase(connectionString, { production = false, sslCa } =
       }
     },
 
-    async createAccount(email, passwordHash) {
-      await pool.execute(
-        "INSERT INTO accounts (email, password_hash, role) VALUES (?, ?, 'client')",
-        [email, passwordHash],
-      );
-    },
-
     async getAccount(email) {
       const [rows] = await pool.execute(
         "SELECT email, password_hash AS passwordHash, role, phone FROM accounts WHERE email = ?",

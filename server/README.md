@@ -143,9 +143,16 @@ intentos. La autorización para mensajes de reparación se guarda con cada orden
 
 Despliega la API Node.js junto a una instancia MySQL administrada o privada. Define
 `MYSQL_URL`, `NODE_ENV=production`, `SESSION_SECRET`, las credenciales iniciales
-del administrador, SMTP y WhatsApp si se requieren esas funciones. Cambia
-`MAIL_DRY_RUN=false` después de configurar SMTP. `MYSQL_SSL_CA` solo es necesaria
-cuando el proveedor exige una CA que Node.js no reconoce.
+del administrador y las credenciales `WHATSAPP_ACCESS_TOKEN` y
+`WHATSAPP_PHONE_NUMBER_ID`: ambas son necesarias para que los clientes reciban
+el código de acceso por WhatsApp. Usa plantillas aprobadas en
+`WHATSAPP_OTP_TEMPLATE` y `WHATSAPP_ORDER_TEMPLATE`.
+
+El correo de constancias queda desactivado mientras `MAIL_DRY_RUN=true`. Para
+enviarlo de verdad, configura `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_SECURE`, `SMTP_USER` y `SMTP_PASS`, y luego cambia `MAIL_DRY_RUN=false`.
+`MYSQL_SSL_CA` solo es necesaria cuando el proveedor exige una CA que Node.js no
+reconoce.
 
 Para Docker, desde esta carpeta:
 

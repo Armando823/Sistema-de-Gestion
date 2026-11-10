@@ -22,6 +22,28 @@ services:
         value: "true"
       - key: MAIL_DRY_RUN
         value: "true"
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_OTP_TEMPLATE
+        value: customer_login_otp
+      - key: WHATSAPP_ORDER_TEMPLATE
+        value: repair_order_code
+      - key: WHATSAPP_TEMPLATE_LANGUAGE
+        value: es
+      - key: MAIL_FROM
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
       - key: BUSINESS_NAME
         value: "Taller Digital"
       - key: SESSION_SECRET

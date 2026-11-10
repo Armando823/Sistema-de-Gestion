@@ -23,7 +23,7 @@ almacenamiento local como fuente de datos.
 
 ## Desarrollo
 
-Requiere Node.js 20+ y una instancia MySQL 8+. Crea una base MySQL vacía y
+Requiere Node.js 24+ y una instancia MySQL 8+. Crea una base MySQL vacía y
 configura `MYSQL_URL`, `SESSION_SECRET`, `ADMIN_EMAIL` y `ADMIN_PASSWORD` en
 `server/.env` (copia `server/.env.example`). Aplica el esquema con las
 migraciones antes de iniciar la API; el primer administrador se crea al arrancar.

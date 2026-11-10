@@ -220,13 +220,24 @@ export default function AdminView({
     total: repairs.filter((repair) => repair.status === status).length,
   }));
   const maxStatusTotal = Math.max(...statusTotals.map((item) => item.total), 1);
-  const currencyPrefix = settings.currency.startsWith("PEN")
-    ? "S/ "
-    : settings.currency.startsWith("USD")
-    ? "US$"
-    : settings.currency.startsWith("MXN")
-      ? "MX$"
-      : "$";
+  const currencyCode = settings.currency.startsWith("USD")
+    ? "USD"
+    : settings.currency.startsWith("COP")
+      ? "COP"
+      : settings.currency.startsWith("MXN")
+        ? "MXN"
+        : "PEN";
+  const currencyLocale = {
+    PEN: "es-PE",
+    USD: "en-US",
+    COP: "es-CO",
+    MXN: "es-MX",
+  }[currencyCode];
+  const formatCurrency = (amount) => new Intl.NumberFormat(currencyLocale, {
+    style: "currency",
+    currency: currencyCode,
+    maximumFractionDigits: 2,
+  }).format(amount);
   function inventoryLevel(stock) {
     if (stock === 0) return "Agotado";
     if (stock < 4) return "Crítico";
@@ -472,7 +483,7 @@ export default function AdminView({
               </div>
             </form>
             <div className="inventory-overview">
-              <div><span>Valor en stock</span><strong>{currencyPrefix}{inventoryValue.toLocaleString("es-CO")}</strong></div>
+              <div><span>Valor en stock</span><strong>{formatCurrency(inventoryValue)}</strong></div>
               <div><span>Referencias activas</span><strong>{inventoryData.length}</strong></div>
               <div className={lowStockCount > 0 ? "inventory-alert" : ""}><span>Requieren atención</span><strong>{lowStockCount}</strong></div>
             </div>
@@ -510,7 +521,7 @@ export default function AdminView({
                   <div className="inventory-progress"><span style={{ width: `${Math.min((item.stock / Math.max(item.minimum * 2, 1)) * 100, 100)}%` }} /></div>
                   <div className="inventory-details">
                     <span>Proveedor: {item.supplier}</span>
-                    <span>{currencyPrefix}{item.cost.toLocaleString("es-CO")} / unidad</span>
+                    <span>{formatCurrency(item.cost)} / unidad</span>
                   </div>
                   <div className="inventory-actions">
                     <button
