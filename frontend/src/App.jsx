@@ -40,7 +40,7 @@ const defaultSettings = {
   businessPhone: "+57 300 000 0000",
   businessEmail: supportEmail,
   businessAddress: "Carrera 15 # 82-20, Bogotá",
-  currency: "PEN - Sol peruano",
+  currency: "COP - Peso colombiano",
   timezone: "Bogotá (GMT-5)",
   serviceHours: "Lunes a sábado, 8:00 a.m. - 6:00 p.m.",
   responseTime: "24 horas",

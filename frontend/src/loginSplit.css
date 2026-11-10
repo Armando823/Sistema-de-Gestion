@@ -94,15 +94,6 @@
   position: relative;
 }
 
-.prototype-note {
-  position: absolute;
-  right: 16px;
-  bottom: 12px;
-  color: #9aa8a5;
-  font-size: 0.72rem;
-  margin: 0;
-}
-
 .login-card {
   width: min(400px, 100%);
   background: #fff;

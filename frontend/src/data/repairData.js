@@ -1,5 +1,3 @@
-export const initialRepairs = [];
-
 export const repairStatuses = [
   "Recibido",
   "En diagnóstico",

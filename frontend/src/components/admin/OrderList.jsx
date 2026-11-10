@@ -84,7 +84,6 @@ function OrderList({
           </tbody>
         </table>
       </div>
-      <p className="orders-prototype-note">Prototipo con datos de ejemplo</p>
     </section>
   );
 }

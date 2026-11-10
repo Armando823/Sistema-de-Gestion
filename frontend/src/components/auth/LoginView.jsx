@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { ADMIN_ENABLED, CLIENT_ENABLED } from "../../appMode";
 
 export default function LoginView({ onAdminLogin, onPhoneLogin, onPhoneCodeRequest }) {
-  const [activeRole, setActiveRole] = useState(CLIENT_ENABLED ? "client" : "admin");
+  const [activeRole, setActiveRole] = useState("client");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
@@ -80,24 +79,22 @@ export default function LoginView({ onAdminLogin, onPhoneLogin, onPhoneCodeReque
 
       <section className="login-right">
         <div className="login-card">
-          {ADMIN_ENABLED && CLIENT_ENABLED && (
-            <div className="role-tabs">
-              <button
-                type="button"
-                className={activeRole === "client" ? "active" : ""}
-                onClick={() => switchRole("client")}
-              >
-                Cliente
-              </button>
-              <button
-                type="button"
-                className={activeRole === "admin" ? "active" : ""}
-                onClick={() => switchRole("admin")}
-              >
-                Administrador
-              </button>
-            </div>
-          )}
+          <div className="role-tabs">
+            <button
+              type="button"
+              className={activeRole === "client" ? "active" : ""}
+              onClick={() => switchRole("client")}
+            >
+              Cliente
+            </button>
+            <button
+              type="button"
+              className={activeRole === "admin" ? "active" : ""}
+              onClick={() => switchRole("admin")}
+            >
+              Administrador
+            </button>
+          </div>
 
           {activeRole === "admin" ? (
             <form className="login-form" onSubmit={submitAdmin}>
@@ -146,7 +143,7 @@ export default function LoginView({ onAdminLogin, onPhoneLogin, onPhoneCodeReque
                   autoComplete="tel"
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
-                  placeholder="+51 9XX XXX XXX"
+                  placeholder="+57 300 123 4567"
                   readOnly={phoneCodeSent}
                 />
               </label>
@@ -188,7 +185,6 @@ export default function LoginView({ onAdminLogin, onPhoneLogin, onPhoneCodeReque
           )}
 
         </div>
-        <span className="prototype-note">Prototipo con datos de ejemplo</span>
       </section>
     </main>
   );
