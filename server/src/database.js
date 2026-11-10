@@ -214,7 +214,7 @@ export function createDatabase(connectionString, { production = false, sslCa } =
           return null;
         }
         const [repairs] = await connection.execute(
-          "SELECT id, phone FROM repairs WHERE owner_phone IS NULL AND owner_email IS NULL",
+          "SELECT id, phone FROM repairs WHERE owner_phone IS NULL",
         );
         for (const repair of repairs) {
           if (normalizePhone(repair.phone) === phone) {
@@ -249,8 +249,10 @@ export function createDatabase(connectionString, { production = false, sslCa } =
           );
       return rows
         .filter((row) => account.role === "admin" ||
-          row.owner_email === account.email ||
-          (!row.owner_email && row.owner_phone === account.phone && normalizePhone(row.phone) === account.phone))
+          (account.role === "client" && account.phone &&
+            row.owner_phone === account.phone &&
+            normalizePhone(row.phone) === account.phone) ||
+          row.owner_email === account.email)
         .map(mapRepair);
     },
 
@@ -432,7 +434,7 @@ export function createDatabase(connectionString, { production = false, sslCa } =
 
     async lookupRepair(id, phone) {
       const [rows] = await pool.execute(
-        "SELECT * FROM repairs WHERE id = ? AND owner_email IS NULL",
+        "SELECT * FROM repairs WHERE id = ? AND (owner_email IS NULL OR owner_phone IS NOT NULL)",
         [id],
       );
       const row = rows[0];
@@ -660,4 +662,3 @@ export function createDatabase(connectionString, { production = false, sslCa } =
     close: () => pool.end(),
   };
 }
- 

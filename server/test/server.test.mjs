@@ -136,7 +136,7 @@ test("config y cliente Meta: requiere los secretos juntos y envía plantillas co
   ]);
 });
 
-test("API web: registro público crea clientes, el login emite sesión y protege recursos", async () => {
+test("API web: los clientes ingresan por celular y el correo queda solo para administración", async () => {
   const accounts = new Map();
   const savedRepairs = [];
   let nextRepairNumber = 1000;
@@ -146,11 +146,12 @@ test("API web: registro público crea clientes, el login emite sesión y protege
     passwordHash: await hashPassword("ContraseñaAdmin123"),
     role: "admin",
   });
+  accounts.set("cliente@correo.com", {
+    email: "cliente@correo.com",
+    passwordHash: await hashPassword("Contraseña123"),
+    role: "client",
+  });
   const database = {
-    async createAccount(email, passwordHash) {
-      if (accounts.has(email)) throw Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" });
-      accounts.set(email, { email, passwordHash, role: "client" });
-    },
     async getAccount(email) { return accounts.get(email) || null; },
     async listRepairs() { return []; },
     async getRepairSyncRevision() { return String(syncRevision); },
@@ -173,21 +174,41 @@ test("API web: registro público crea clientes, el login emite sesión y protege
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "cliente@correo.com", password: "Contraseña123" }),
     });
-    assert.equal(register.status, 201);
-    assert.deepEqual(await register.json(), {
-      account: { email: "cliente@correo.com", role: "client" },
-    });
-    assert.match(accounts.get("cliente@correo.com").passwordHash, /^scrypt\$/);
+    assert.equal(register.status, 410);
 
-    const login = await fetch(`${app.url}/api/auth/login`, {
+    const clientLogin = await fetch(`${app.url}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "CLIENTE@correo.com", password: "Contraseña123" }),
     });
-    assert.equal(login.status, 200);
-    const { token, account } = await login.json();
-    assert.equal(account.role, "client");
+    assert.equal(clientLogin.status, 403);
+    assert.match((await clientLogin.json()).error, /celular y el código de WhatsApp/);
+    const legacyClientToken = createSessionToken(
+      { email: "cliente@correo.com", role: "client" },
+      makeConfig().sessionSecret,
+    );
+    assert.equal((await fetch(`${app.url}/api/repairs`, {
+      headers: { Authorization: `Bearer ${legacyClientToken}` },
+    })).status, 401);
+
+    const adminLogin = await fetch(`${app.url}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "ADMIN@taller.com", password: "ContraseñaAdmin123" }),
+    });
+    assert.equal(adminLogin.status, 200);
+    const { token, account } = await adminLogin.json();
+    assert.equal(account.role, "admin");
     const clientCreate = await fetch(`${app.url}/api/repairs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${legacyClientToken}`,
+      },
+      body: JSON.stringify({ repair: { ...repair, status: "Entregado" } }),
+    });
+    assert.equal(clientCreate.status, 401);
+    const adminCreate = await fetch(`${app.url}/api/repairs`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -195,7 +216,7 @@ test("API web: registro público crea clientes, el login emite sesión y protege
       },
       body: JSON.stringify({ repair: { ...repair, status: "Entregado" } }),
     });
-    assert.equal(clientCreate.status, 201);
+    assert.equal(adminCreate.status, 201);
     assert.equal(savedRepairs[0].repair.status, "Recibido");
     assert.equal((await fetch(`${app.url}/api/repairs`)).status, 401);
     const repairs = await fetch(`${app.url}/api/repairs`, {
@@ -235,7 +256,12 @@ test("API web: registro público crea clientes, el login emite sesión y protege
     });
     assert.equal(adminSetting.status, 200);
     const forbidden = await fetch(`${app.url}/api/settings/workshop-logo`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${createSessionToken(
+          { email: "whatsapp-573001234567@phone.invalid", role: "client", phone: "+573001234567" },
+          makeConfig().sessionSecret,
+        )}`,
+      },
     });
     assert.equal(forbidden.status, 403);
   } finally {
@@ -246,7 +272,7 @@ test("API web: registro público crea clientes, el login emite sesión y protege
 test("órdenes usan mutaciones versionadas y garantías solo son editables por administración", async () => {
   const config = makeConfig();
   const admin = { email: "admin@taller.com", role: "admin" };
-  const client = { email: "cliente@correo.com", role: "client" };
+  const client = { email: "whatsapp-573001234567@phone.invalid", role: "client", phone: "+573001234567" };
   const storedWarranties = {};
   const inventory = new Map();
   const repairHistory = [];
@@ -723,7 +749,7 @@ test("una sesión solo envía constancias de su orden y correo guardados", async
     status: "En diagnóstico",
     updated: "fecha registrada",
     owner_email: "ana@correo.com",
-    owner_phone: null,
+    owner_phone: "+573001234567",
     contact_email: "ana@correo.com",
     signature: PNG,
   };
@@ -731,23 +757,25 @@ test("una sesión solo envía constancias de su orden y correo guardados", async
     async getRepairById(id) { return id === stored.id ? stored : null; },
   };
   const app = await start({ config, database });
-  const sendAs = (email, body) => fetch(`${app.url}/api/notifications/receipt`, {
+  const sendAs = (email, phone, body) => fetch(`${app.url}/api/notifications/receipt`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${createSessionToken({ email, role: "client" }, config.sessionSecret)}`,
+      Authorization: `Bearer ${createSessionToken({ email, role: "client", ...(phone ? { phone } : {}) }, config.sessionSecret)}`,
     },
     body: JSON.stringify(body),
   });
   try {
-    assert.equal((await sendAs("otra@correo.com", goodBody)).status, 403);
-    assert.equal((await sendAs("ana@correo.com", { ...goodBody, email: "atacante@correo.com" })).status, 403);
+    assert.equal((await sendAs("otra@correo.com", "+573111111111", goodBody)).status, 403);
+    assert.equal((await sendAs("ana@correo.com", "+573111111111", goodBody)).status, 403);
+    assert.equal((await sendAs("ana@correo.com", "+573001234567", { ...goodBody, email: "atacante@correo.com" })).status, 403);
+    assert.equal((await sendAs("ana@correo.com", "", goodBody)).status, 401);
 
     const forged = {
       ...goodBody,
       repair: { ...repair, customer: "Nombre falsificado", problem: "Falla falsificada" },
     };
-    const response = await sendAs("ana@correo.com", forged);
+    const response = await sendAs("whatsapp-573001234567@phone.invalid", "+573001234567", forged);
     assert.equal(response.status, 200);
     assert.equal(app.sent.length, 1);
     assert.equal(app.sent[0].to, "ana@correo.com");

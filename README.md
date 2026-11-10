@@ -7,8 +7,8 @@ almacenamiento local como fuente de datos.
 
 ## Funciones
 
-- Acceso del administrador y de clientes; los clientes pueden ingresar por
-  correo/contraseña o verificar su celular con un código de WhatsApp.
+- El administrador ingresa con correo y contraseña; los clientes ingresan
+  únicamente con su celular verificado mediante un código de WhatsApp.
 - Crear solicitudes, buscar órdenes y consultar su estado, respetando el acceso
   del cliente a sus propios registros.
 - Registrar hasta tres fotos de recepción, firma y aceptación; generar,
@@ -56,6 +56,8 @@ MySQL es la única persistencia de la aplicación. La base nueva empieza vacía 
 no se migran automáticamente los registros de la versión anterior. Las sesiones
 se validan en el servidor; las órdenes de clientes se asocian a su cuenta o al
 celular verificado y no se permiten búsquedas por código solamente.
+El registro e inicio de sesión de clientes por correo están deshabilitados;
+las cuentas antiguas solo pueden acceder mediante un celular verificado.
 
 Revisa [`SECURITY.md`](SECURITY.md) antes de operar con datos reales.
 

@@ -1,7 +1,6 @@
 import { createHmac, randomInt, randomUUID } from "node:crypto";
 import {
   createSessionToken,
-  hashPassword,
   normalizeEmail,
   TOKEN_TTL_SECONDS,
   validateCredentials,
@@ -113,7 +112,10 @@ export function createAuthHandlers({
       send(res, 200, { token, account }, cors);
       return;
     }
-    if (req.method !== "POST" || !["/api/auth/login", "/api/auth/register"].includes(pathname)) {
+    if (req.method === "POST" && pathname === "/api/auth/register") {
+      throw new HttpError(410, "El registro con correo ya no está disponible. Ingresa con tu celular y WhatsApp.");
+    }
+    if (req.method !== "POST" || pathname !== "/api/auth/login") {
       throw new HttpError(404, "No encontrado.");
     }
     takeAuthLimit(req);
@@ -121,25 +123,13 @@ export function createAuthHandlers({
     const email = normalizeEmail(body?.email);
     const validationError = validateCredentials(email, body?.password);
     if (validationError) throw new HttpError(422, validationError);
-    let account;
-    if (pathname === "/api/auth/register") {
-      try {
-        const passwordHash = await hashPassword(body.password);
-        await database.createAccount(email, passwordHash);
-      } catch (error) {
-        if (["23505", "ER_DUP_ENTRY"].includes(error.code)) {
-          throw new HttpError(409, "Ya existe una cuenta con ese correo.");
-        }
-        throw error;
-      }
-      account = { email, role: "client" };
-      send(res, 201, { account }, cors);
-      return;
-    }
     const stored = await database.getAccount(email);
     const valid = stored && await verifyPassword(body.password, stored.passwordHash);
     if (!valid) throw new HttpError(401, "El correo o la contraseña no son correctos.");
-    account = { email: stored.email, role: stored.role };
+    if (stored.role !== "admin") {
+      throw new HttpError(403, "Los clientes ingresan únicamente con su celular y el código de WhatsApp.");
+    }
+    const account = { email: stored.email, role: stored.role };
     const sid = randomUUID();
     const token = createSessionToken(account, config.sessionSecret, now(), sid);
     if (typeof database?.saveSession === "function") {

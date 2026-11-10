@@ -7,11 +7,8 @@ import ConfirmModal from "./components/modals/ConfirmModal";
 import ReceiptModal from "./components/modals/ReceiptModal";
 import { loadRepairs } from "./services/repairStorage";
 import {
-  authenticateClient,
   authenticateAdmin,
   clearClientSession,
-  registerClient,
-  saveClientSession,
 } from "./services/accountStorage";
 import {
   createSharedRepair,
@@ -464,31 +461,6 @@ function App({ version = "2.4" }) {
     event.target.value = "";
   }
 
-  async function handleClientLogin(email, password) {
-    const result = await authenticateClient(email, password);
-    if (result.account) {
-      setClientEmail(result.account.email);
-      setClientPhone(result.account.phone || "");
-      if (!await saveClientSession(result.account.email)) {
-        return { error: "No se pudo guardar la sesión. Inténtalo de nuevo." };
-      }
-      try {
-        const [savedRepairs, savedSettings] = await Promise.all([
-          loadRepairs(),
-          readSetting("workshop-settings", {}),
-        ]);
-        setRepairs(savedRepairs);
-        setRepairsReady(true);
-        setSettingsReady(true);
-        setSettings({ ...defaultSettings, ...savedSettings });
-      } catch (error) {
-        return { error: error.message || "No se pudieron cargar los datos del servidor." };
-      }
-      setRole(result.account.role || "client");
-    }
-    return result;
-  }
-
   async function handlePhoneCodeRequest(phone) {
     try {
       await requestSharedPhoneCode(phone);
@@ -545,15 +517,9 @@ function App({ version = "2.4" }) {
     }
   }
 
-  function handleClientRegister(email, password) {
-    return registerClient(email, password);
-  }
-
   if (!role) {
     return (
       <LoginView
-        onClientLogin={handleClientLogin}
-        onClientRegister={handleClientRegister}
         onAdminLogin={handleAdminLogin}
         onPhoneLogin={handlePhoneLogin}
         onPhoneCodeRequest={handlePhoneCodeRequest}

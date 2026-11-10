@@ -72,13 +72,6 @@ export async function sendSharedRepairCode(repairId) {
   });
 }
 
-export async function registerSharedAccount(email, password) {
-  return (await request("/api/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  }, false)).account;
-}
-
 export async function restoreSharedSession() {
   const session = readWebSession();
   if (!session?.token) return null;
@@ -180,15 +173,6 @@ async function loadRepairsUnconditionally(token) {
   if (response.notModified) throw new Error("El servidor no devolvió las órdenes solicitadas.");
   if (token) repairSnapshots.set(token, { etag: response.etag, repairs: response.data.repairs });
   return response.data.repairs;
-}
-
-export async function readClientSession() {
-  return readWebSession()?.email || "";
-}
-
-export async function saveClientSession(email) {
-  const session = readWebSession();
-  return Boolean(session?.token && session.email === email);
 }
 
 export async function clearClientSession() {

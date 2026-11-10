@@ -59,10 +59,9 @@ export function createNotificationHandlers({
     let destination;
     if (session.role === "admin") {
       destination = normalizePhone(repair.phone);
-    } else if (session.phone &&
-      (repair.owner_email === session.email ||
-        (!repair.owner_email && repair.owner_phone === session.phone &&
-          normalizePhone(repair.phone) === session.phone))) {
+    } else if (session.role === "client" && session.phone &&
+      repair.owner_phone === session.phone &&
+      normalizePhone(repair.phone) === session.phone) {
       destination = session.phone;
     } else {
       throw new HttpError(403, "No tienes permisos para enviar este código.");
@@ -92,6 +91,9 @@ export function createNotificationHandlers({
     }
 
     const session = await getSession(req);
+    if (session?.role === "client" && !normalizePhone(session.phone)) {
+      throw new HttpError(401, "Los clientes ingresan con su celular y el código de WhatsApp.");
+    }
     const authorizedWithApiKey = config.apiKey && sameSecret(req.headers["x-api-key"], config.apiKey);
     if (!authorizedWithApiKey && !session) {
       throw new HttpError(401, "No autorizado.");
@@ -110,8 +112,9 @@ export function createNotificationHandlers({
       const stored = await database.getRepairById(parsed.value.repair.id);
       const isOwner = stored && (
         session.role === "admin" ||
-        stored.owner_email === session.email ||
-        (!stored.owner_email && session.phone && stored.owner_phone === session.phone)
+        (session.role === "client" && session.phone &&
+          stored.owner_phone === session.phone &&
+          normalizePhone(stored.phone) === session.phone)
       );
       if (!isOwner) {
         throw new HttpError(403, "No tienes permisos para enviar esta constancia.");

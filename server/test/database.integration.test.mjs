@@ -174,9 +174,10 @@ test("MySQL asocia y consulta teléfonos solo con coincidencia E.164 exacta", {
   assert.equal(account.phone, phone);
   assert.deepEqual(
     (await database.listRepairs(account)).map(({ id }) => id).sort(),
-    [ids[0]],
+    [ids[0], ids[3]].sort(),
   );
   assert.equal(await database.lookupRepair(ids[0], phone) !== null, true);
+  assert.equal(await database.lookupRepair(ids[3], phone) !== null, true);
   assert.equal(await database.lookupRepair(ids[1], phone), null);
   assert.equal(await database.lookupRepair(ids[2], phone), null);
 

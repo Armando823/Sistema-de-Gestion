@@ -1,13 +1,10 @@
 import { useState } from "react";
 import { ADMIN_ENABLED, CLIENT_ENABLED } from "../../appMode";
 
-export default function LoginView({ onClientLogin, onClientRegister, onAdminLogin, onPhoneLogin, onPhoneCodeRequest }) {
-  const hasPhone = Boolean(onPhoneLogin && onPhoneCodeRequest);
+export default function LoginView({ onAdminLogin, onPhoneLogin, onPhoneCodeRequest }) {
   const [activeRole, setActiveRole] = useState(CLIENT_ENABLED ? "client" : "admin");
-  const [clientMode, setClientMode] = useState(hasPhone ? "phone" : "email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [phone, setPhone] = useState("");
   const [phoneCode, setPhoneCode] = useState("");
   const [phoneCodeSent, setPhoneCodeSent] = useState(false);
@@ -19,7 +16,6 @@ export default function LoginView({ onClientLogin, onClientRegister, onAdminLogi
     setPhone("");
     setPhoneCode("");
     setPassword("");
-    setPasswordConfirmation("");
     setPhoneCodeSent(false);
     setConsent(false);
     setError("");
@@ -27,11 +23,6 @@ export default function LoginView({ onClientLogin, onClientRegister, onAdminLogi
 
   function switchRole(role) {
     setActiveRole(role);
-    resetFields();
-  }
-
-  function switchClientMode(mode) {
-    setClientMode(mode);
     resetFields();
   }
 
@@ -44,33 +35,6 @@ export default function LoginView({ onClientLogin, onClientRegister, onAdminLogi
     }
     setError("");
     setPassword("");
-  }
-
-  async function submitClientEmail(event) {
-    event.preventDefault();
-    const result = await onClientLogin(email, password);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setError("");
-  }
-
-  async function submitRegistration(event) {
-    event.preventDefault();
-    if (password !== passwordConfirmation) {
-      setError("Las contraseñas no coinciden.");
-      return;
-    }
-    const result = await onClientRegister(email, password);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setPassword("");
-    setPasswordConfirmation("");
-    setError("Cuenta creada. Ahora puedes iniciar sesión.");
-    setClientMode("email");
   }
 
   async function requestPhoneCode(event) {
@@ -165,7 +129,7 @@ export default function LoginView({ onClientLogin, onClientRegister, onAdminLogi
               {error && <p className="form-error" role="alert">{error}</p>}
               <button type="submit" className="primary-button">Entrar al panel administrativo</button>
             </form>
-          ) : clientMode === "phone" ? (
+          ) : (
             <form className="login-form" onSubmit={phoneCodeSent ? submitPhoneCode : requestPhoneCode}>
               <p className="eyebrow">ACCESO PÚBLICO</p>
               <h2>Consulta tu reparación</h2>
@@ -220,94 +184,6 @@ export default function LoginView({ onClientLogin, onClientRegister, onAdminLogi
                   Cambiar celular
                 </button>
               )}
-              <button type="button" className="private-access" onClick={() => switchClientMode("email")}>
-                ¿Ya tienes cuenta? Iniciar sesión con correo
-              </button>
-            </form>
-          ) : clientMode === "email" ? (
-            <form className="login-form" onSubmit={submitClientEmail}>
-              <p className="eyebrow">ACCESO PÚBLICO</p>
-              <h2>Iniciar sesión</h2>
-              <p className="login-subtitle">Usa tu cuenta para consultar tus reparaciones.</p>
-              <label>
-                Correo electrónico
-                <input
-                  required
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="cliente@correo.com"
-                />
-              </label>
-              <label>
-                Contraseña
-                <input
-                  required
-                  type="password"
-                  minLength={10}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Mínimo 10 caracteres, letra y número"
-                />
-              </label>
-              {error && <p className="form-error" role="alert">{error}</p>}
-              <button type="submit" className="primary-button">Entrar como cliente</button>
-              {hasPhone && (
-                <button type="button" className="private-access" onClick={() => switchClientMode("phone")}>
-                  Volver al acceso con WhatsApp
-                </button>
-              )}
-              <button type="button" className="private-access" onClick={() => switchClientMode("register")}>
-                Crear cuenta de cliente
-              </button>
-            </form>
-          ) : (
-            <form className="login-form" onSubmit={submitRegistration}>
-              <p className="eyebrow">ACCESO PÚBLICO</p>
-              <h2>Crear cuenta</h2>
-              <p className="login-subtitle">Regístrate para consultar tus reparaciones.</p>
-              <label>
-                Correo electrónico
-                <input
-                  required
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="cliente@correo.com"
-                />
-              </label>
-              <label>
-                Contraseña
-                <input
-                  required
-                  type="password"
-                  minLength={10}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Mínimo 10 caracteres, letra y número"
-                />
-              </label>
-              <label>
-                Confirmar contraseña
-                <input
-                  required
-                  type="password"
-                  minLength={10}
-                  autoComplete="new-password"
-                  value={passwordConfirmation}
-                  onChange={(event) => setPasswordConfirmation(event.target.value)}
-                  placeholder="Repite tu contraseña"
-                />
-              </label>
-              {error && <p className="form-error" role="alert">{error}</p>}
-              <button type="submit" className="primary-button">Crear cuenta</button>
-              <button type="button" className="private-access" onClick={() => switchClientMode("email")}>
-                Ya tengo cuenta
-              </button>
             </form>
           )}
 

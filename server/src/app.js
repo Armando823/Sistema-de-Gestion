@@ -5,6 +5,7 @@ import { join, extname, resolve } from "node:path";
 import { createRateLimiter } from "./rateLimiter.js";
 import { parseReceiptRequest } from "./receiptEmail.js";
 import { verifySessionToken } from "./auth.js";
+import { normalizePhone } from "./phone.js";
 import { createAdminHandlers } from "./routes/admin.js";
 import { createAuthHandlers } from "./routes/auth.js";
 import { createNotificationHandlers } from "./routes/notifications.js";
@@ -143,6 +144,9 @@ export function createApp({ config, mailer, database, whatsapp, log = console, n
   async function requireSession(req) {
     const session = await getSession(req);
     if (!session) throw new HttpError(401, "Inicia sesión para continuar.");
+    if (session.role === "client" && !normalizePhone(session.phone)) {
+      throw new HttpError(401, "Inicia sesión con tu celular y el código de WhatsApp.");
+    }
     return session;
   }
 
