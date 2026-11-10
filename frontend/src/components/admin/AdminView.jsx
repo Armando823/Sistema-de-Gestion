@@ -44,6 +44,7 @@ export default function AdminView({
   const [inventorySearch, setInventorySearch] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState("Todos");
   const [editingInventoryId, setEditingInventoryId] = useState(null);
+  const [inventoryDetailsOpen, setInventoryDetailsOpen] = useState(false);
   const [inventoryForm, setInventoryForm] = useState({
     item: "",
     sku: "",
@@ -234,6 +235,7 @@ export default function AdminView({
   }
   function resetInventoryForm() {
     setEditingInventoryId(null);
+    setInventoryDetailsOpen(false);
     setInventoryForm({ item: "", sku: "", category: "", stock: "", minimum: "", cost: "", supplier: "" });
   }
   async function saveInventoryItem(event) {
@@ -242,14 +244,14 @@ export default function AdminView({
       ...inventoryForm,
       id: editingInventoryId ?? crypto.randomUUID(),
       item: inventoryForm.item.trim(),
-      sku: inventoryForm.sku.trim().toUpperCase(),
-      category: inventoryForm.category.trim(),
-      supplier: inventoryForm.supplier.trim(),
+      sku: inventoryForm.sku.trim().toUpperCase() || "SIN-SKU",
+      category: inventoryForm.category.trim() || "General",
+      supplier: inventoryForm.supplier.trim() || "Sin proveedor",
       stock: Number(inventoryForm.stock),
       minimum: Math.max(Number(inventoryForm.minimum) || 0, 0),
       cost: Math.max(Number(inventoryForm.cost) || 0, 0),
     };
-    if (!inventoryReady || inventoryMutationBusy || !item.item || !item.sku || !item.category || !item.supplier) return;
+    if (!inventoryReady || inventoryMutationBusy || !item.item) return;
     setInventoryMutationBusy(true);
     try {
       const saved = editingInventoryId
@@ -270,6 +272,7 @@ export default function AdminView({
   }
   function editInventoryItem(item) {
     setEditingInventoryId(item.id);
+    setInventoryDetailsOpen(true);
     setInventoryForm({ ...item, stock: String(item.stock), minimum: String(item.minimum), cost: String(item.cost) });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -439,18 +442,33 @@ export default function AdminView({
               <div className="inventory-form-title">
                 <div>
                   <strong>{editingInventoryId ? "Editar repuesto" : "Agregar repuesto"}</strong>
+                  <span>{editingInventoryId ? "Actualiza el nombre y la cantidad disponible." : "Solo necesitas el nombre y la cantidad."}</span>
                 </div>
                 {editingInventoryId && <button type="button" className="inventory-cancel" onClick={resetInventoryForm}>Cancelar edición</button>}
               </div>
               <div className="inventory-form-fields">
-                <input required aria-label="Nombre del repuesto" value={inventoryForm.item} onChange={(event) => setInventoryForm({ ...inventoryForm, item: event.target.value })} placeholder="Repuesto" />
-                <input required aria-label="SKU o referencia" value={inventoryForm.sku} onChange={(event) => setInventoryForm({ ...inventoryForm, sku: event.target.value })} placeholder="SKU" />
-                <input required value={inventoryForm.category} onChange={(event) => setInventoryForm({ ...inventoryForm, category: event.target.value })} placeholder="Categoría" />
-                <input required aria-label="Existencias" type="number" min="0" value={inventoryForm.stock} onChange={(event) => setInventoryForm({ ...inventoryForm, stock: event.target.value })} placeholder="Cantidad" />
-                <input required aria-label="Stock mínimo" type="number" min="0" value={inventoryForm.minimum} onChange={(event) => setInventoryForm({ ...inventoryForm, minimum: event.target.value })} placeholder="Mínimo" />
-                <input required aria-label="Costo unitario" type="number" min="0" value={inventoryForm.cost} onChange={(event) => setInventoryForm({ ...inventoryForm, cost: event.target.value })} placeholder="Costo" />
-                <input required value={inventoryForm.supplier} onChange={(event) => setInventoryForm({ ...inventoryForm, supplier: event.target.value })} placeholder="Proveedor" />
+                <input required aria-label="Nombre del repuesto" value={inventoryForm.item} onChange={(event) => setInventoryForm({ ...inventoryForm, item: event.target.value })} placeholder="Nombre del repuesto" />
+                <input required aria-label="Cantidad disponible" type="number" min="0" step="1" value={inventoryForm.stock} onChange={(event) => setInventoryForm({ ...inventoryForm, stock: event.target.value })} placeholder="Cantidad disponible" />
                 <button type="submit" className="inventory-save" disabled={!inventoryReady || inventoryMutationBusy}>{editingInventoryId ? "Guardar cambios" : "Guardar repuesto"}</button>
+              </div>
+              <div className="inventory-optional">
+                <button
+                  type="button"
+                  className="inventory-optional-toggle"
+                  aria-expanded={inventoryDetailsOpen}
+                  onClick={() => setInventoryDetailsOpen((open) => !open)}
+                >
+                  {inventoryDetailsOpen ? "Ocultar detalles opcionales" : "Agregar detalles opcionales"}
+                </button>
+                {inventoryDetailsOpen && (
+                  <div className="inventory-optional-fields">
+                    <input aria-label="SKU o referencia" value={inventoryForm.sku} onChange={(event) => setInventoryForm({ ...inventoryForm, sku: event.target.value })} placeholder="SKU (opcional)" />
+                    <input aria-label="Categoría" value={inventoryForm.category} onChange={(event) => setInventoryForm({ ...inventoryForm, category: event.target.value })} placeholder="Categoría (opcional)" />
+                    <input aria-label="Stock mínimo" type="number" min="0" step="1" value={inventoryForm.minimum} onChange={(event) => setInventoryForm({ ...inventoryForm, minimum: event.target.value })} placeholder="Cantidad mínima (opcional)" />
+                    <input aria-label="Costo unitario" type="number" min="0" step="0.01" value={inventoryForm.cost} onChange={(event) => setInventoryForm({ ...inventoryForm, cost: event.target.value })} placeholder="Costo por unidad (opcional)" />
+                    <input aria-label="Proveedor" value={inventoryForm.supplier} onChange={(event) => setInventoryForm({ ...inventoryForm, supplier: event.target.value })} placeholder="Proveedor (opcional)" />
+                  </div>
+                )}
               </div>
             </form>
             <div className="inventory-overview">

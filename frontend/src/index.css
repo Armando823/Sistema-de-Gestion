@@ -1336,9 +1336,15 @@ nav {
   font-size: 0.95rem;
 }
 
+.inventory-form-title span {
+  margin-top: 4px;
+  color: #71817e;
+  font-size: 0.8rem;
+}
+
 .inventory-form-fields {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -1361,6 +1367,35 @@ nav {
   background: #16806d;
   color: #fff;
   min-height: 40px;
+  grid-column: 1 / -1;
+}
+
+.inventory-optional {
+  margin-top: 10px;
+}
+
+.inventory-optional-toggle {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: #176c5c;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inventory-optional-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.inventory-optional-fields input {
+  min-width: 0;
+  margin: 0;
+  padding: 9px 10px;
 }
 
 .inventory-cancel {
@@ -3384,6 +3419,10 @@ select:focus {
 
   .inventory-form-fields .inventory-save {
     grid-column: 1 / -1;
+  }
+
+  .inventory-optional-fields {
+    grid-template-columns: 1fr;
   }
 
   .settings-columns {
